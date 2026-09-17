@@ -598,30 +598,6 @@ export function LeaveByPanel({
         )}
       </section>
 
-      <div className="row-2">
-        <label className="field">
-          <span>Drive (minutes)</span>
-          <input
-            type="number"
-            min={5}
-            max={400}
-            placeholder="Estimate below"
-            value={trip.driveMinutes ?? ""}
-            onChange={(e) => onChangeDrive(Number(e.target.value) || 0)}
-          />
-        </label>
-        <label className="field">
-          <span>Park + transfer (minutes)</span>
-          <input
-            type="number"
-            min={0}
-            max={120}
-            value={trip.parkingMinutes ?? plan.transferMinutes}
-            onChange={(e) => onChangeParking(Number(e.target.value) || 0)}
-          />
-        </label>
-      </div>
-
       {pickupPeople.length > 0 ? (
         <section className="pickup-summary">
           <div className="panel-head" style={{ padding: 0, marginBottom: "0.55rem" }}>
