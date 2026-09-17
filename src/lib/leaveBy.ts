@@ -477,7 +477,9 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
     notes.push("Drive time not set — enter towns and tap Estimate drive.");
   }
   if (parkingSummary && !nearParking) notes.push(`Parking: ${parkingSummary}`);
-  if (!fromTown) notes.push("Add the town you are travelling from.");
+  if (!fromTown && !trip.homePostcode?.trim()) {
+    notes.push("Add the driver’s start postcode (or town).");
+  }
   if (trip.driveDistanceKm && driveKnown) {
     notes.push(`Map route ~${trip.driveDistanceKm} km → ${formatDuration(driveMinutes)} drive.`);
   }

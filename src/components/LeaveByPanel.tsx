@@ -116,6 +116,7 @@ export function LeaveByPanel({
   const autoTried = useRef(false);
   const absurdRetried = useRef(false);
   const routeKeyRef = useRef("");
+  const estimatingRef = useRef(false);
 
   const driver = getDriverPerson(trip);
   const driverReady = isDriverSetupComplete(trip);
@@ -232,14 +233,17 @@ export function LeaveByPanel({
   const originReady = driverReady;
 
   const routeFingerprint = useMemo(() => {
-    const stops = (trip.extraStops ?? [])
+    // Sort stops by id so reordering after estimate does not retrigger forever
+    const stops = [...(trip.extraStops ?? [])]
       .map((s) => `${s.id}:${resolveStopAddress(trip, s)}`)
+      .sort()
       .join("|");
     return [
       // Bump when geocoder/routing changes so saved long legs re-estimate once
-      "drv-v6",
+      "drv-v7",
       trip.homePostcode?.trim() ?? "",
-      trip.fromTown?.trim() ?? "",
+      // Usable town only — empty/bad fromTown must not churn the fingerprint
+      isUsableUkTownName(trip.fromTown) ? String(trip.fromTown).trim() : "",
       toTownValue,
       parking?.name ?? "",
       parking?.airport ?? "",
@@ -306,8 +310,12 @@ export function LeaveByPanel({
       setEstimateMsg("Choose the driver and their start postcode first.");
       return;
     }
+    if (estimatingRef.current) return;
+    estimatingRef.current = true;
     setEstimating(true);
     setEstimateMsg(null);
+    const ac = new AbortController();
+    const timeout = window.setTimeout(() => ac.abort(), 55000);
     try {
       const driverId = trip.driverPersonId || driver?.id;
       const waypoints = (trip.extraStops ?? [])
@@ -322,6 +330,7 @@ export function LeaveByPanel({
       const res = await fetch("/api/drive-estimate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ac.signal,
         body: JSON.stringify({
           fromTown: (() => {
             const town = trip.fromTown?.trim();
@@ -370,6 +379,9 @@ export function LeaveByPanel({
             )
           : undefined,
       );
+      // Mark this route done so stop reorder does not spin another estimate
+      routeKeyRef.current = routeFingerprint;
+      autoTried.current = true;
       const orderNote =
         data.orderedWaypoints && data.orderedWaypoints.length > 1
           ? `Nearest→furthest from home: ${data.orderedWaypoints
@@ -393,9 +405,17 @@ export function LeaveByPanel({
           .filter(Boolean)
           .join(" · "),
       );
-    } catch {
-      setEstimateMsg("Estimate failed — set drive minutes manually.");
+    } catch (err) {
+      const aborted =
+        err instanceof DOMException && err.name === "AbortError";
+      setEstimateMsg(
+        aborted
+          ? "Map estimate timed out — tap again, or set drive minutes manually."
+          : "Estimate failed — set drive minutes manually.",
+      );
     } finally {
+      window.clearTimeout(timeout);
+      estimatingRef.current = false;
       setEstimating(false);
     }
   }
@@ -425,10 +445,11 @@ export function LeaveByPanel({
         absurdDrive ||
         routeChanged);
 
-    if (!needsEstimate || estimating) return;
+    if (!needsEstimate || estimatingRef.current) return;
     if (!routeChanged && !absurdDrive && autoTried.current) return;
 
     const t = setTimeout(() => {
+      if (estimatingRef.current) return;
       autoTried.current = true;
       if (absurdDrive) absurdRetried.current = true;
       routeKeyRef.current = routeFingerprint;

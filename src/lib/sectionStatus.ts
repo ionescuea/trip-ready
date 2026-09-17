@@ -58,8 +58,17 @@ export function leaveBySectionStatus(trip: Trip): SectionStatus {
   const hasDepart = Boolean(flight?.extracted.startDate && flight?.extracted.startTime);
   const hasDriver = Boolean(trip.driverPersonId);
   const hasStart = Boolean(trip.homePostcode?.trim());
-  const hasFrom = Boolean(trip.fromTown?.trim());
-  const hasTo = Boolean(trip.toTown?.trim() || trip.bookings.some((b) => b.type === "parking"));
+  // Postcode-only start is enough — fromTown is optional map bias
+  const hasFrom = Boolean(
+    trip.fromTown?.trim() || trip.homePostcode?.trim(),
+  );
+  const hasTo = Boolean(
+    trip.toTown?.trim() ||
+      trip.bookings.some((b) => b.type === "parking") ||
+      trip.bookings.some(
+        (b) => b.type === "flight" && b.extracted.departureAirport?.trim(),
+      ),
+  );
   const hasDrive = typeof trip.driveMinutes === "number" && trip.driveMinutes > 0;
 
   if (!hasDepart) {

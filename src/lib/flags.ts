@@ -141,13 +141,13 @@ export function computeFlags(trip: Trip): Flag[] {
       detail: "Drop the parking confirmation if you are driving to the airport.",
     });
   }
-  if (!trip.fromTown?.trim()) {
+  if (!trip.fromTown?.trim() && !trip.homePostcode?.trim()) {
     flags.push({
       id: "no-from-town",
       severity: "yellow",
       title: "Starting town not set",
       detail:
-        "Add any town or city you are travelling from so the drive can be estimated.",
+        "Add the driver’s start postcode (or a town) so the drive can be estimated.",
     });
   }
   if (!trip.driverPersonId && trip.people.length > 0) {
