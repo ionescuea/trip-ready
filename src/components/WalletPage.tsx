@@ -35,8 +35,10 @@ const WALLET_FILTER_KEY = "trip-ready-wallet-filter-person";
 async function withServerPageText(
   file: File,
   pages: SplitPdfPage[],
+  force = false,
 ): Promise<SplitPdfPage[]> {
   const weak =
+    force ||
     pages.length === 0 ||
     pages.every((p) => p.text.trim().length < 12) ||
     pages.some((p) => p.text.trim().length < 8);
@@ -57,12 +59,20 @@ async function withServerPageText(
     return pages.map((p, i) => {
       const serverText = data.pages?.[i]?.trim() || "";
       if (!serverText) return p;
-      if (p.text.trim().length >= serverText.length) return p;
+      if (!force && p.text.trim().length >= serverText.length) return p;
       return { ...p, text: serverText };
     });
   } catch {
     return pages;
   }
+}
+
+/** iOS can invalidate the picker File after the first await — clone bytes up front. */
+async function stablePdfFile(file: File): Promise<File> {
+  const bytes = await file.arrayBuffer();
+  return new File([bytes], file.name || "boarding-pass.pdf", {
+    type: file.type || "application/pdf",
+  });
 }
 
 function PersonFilterPicker({
@@ -258,22 +268,37 @@ export function WalletPage() {
 
       if (isPdf) {
         setMsg("Matching boarding passes to traveller names…");
-        let pages = await splitPdfFileToPages(file);
-        pages = await withServerPageText(file, pages);
+        // Clone before any await — iPhone file inputs go stale otherwise
+        const pdf = await stablePdfFile(file);
+        let pages = await splitPdfFileToPages(pdf);
+        pages = await withServerPageText(pdf, pages, true);
         let matched = assignPassPagesByName(pages, trip.people);
+        let assignedBySelection = false;
 
-        // Second chance: always overlay server text if first pass matched nothing
-        if (matched.length === 0) {
-          pages = await withServerPageText(file, pages.map((p) => ({ ...p, text: "" })));
-          matched = assignPassPagesByName(pages, trip.people);
+        // If auto-match fails but a traveller chip is selected, put every page
+        // on that person (handy for a single-person PDF / stubborn name print).
+        if (matched.length === 0 && selectedPersonId) {
+          const personName =
+            trip.people.find((p) => p.id === selectedPersonId)?.name.trim() ||
+            "Traveller";
+          matched = pages.map((page) => ({
+            personId: selectedPersonId,
+            personName,
+            page,
+          }));
+          assignedBySelection = true;
         }
 
         if (matched.length === 0) {
+          const roster = trip.people
+            .map((p) => p.name.trim())
+            .filter(Boolean)
+            .join(", ");
           const anyText = pages.some((p) => p.text.trim().length >= 8);
           setMsg(
             anyText
-              ? "Couldn’t match roster names on this PDF. In Pack, use the same names as on the passes (e.g. Elena Morosanu), then upload again."
-              : "Couldn’t read passenger names from this PDF on your phone. Try again on Wi‑Fi, or use a text PDF (not a photo scan).",
+              ? `Couldn’t match names on this PDF to Pack (${roster || "no travellers"}). Select a traveller chip first to assign the pages to them, or rename people to match the passes.`
+              : "Couldn’t read passenger names from this PDF. Select a traveller chip, then upload again to assign the pages to them.",
           );
           return;
         }
@@ -321,7 +346,11 @@ export function WalletPage() {
             return `${name} ×${n}`;
           })
           .join(", ");
-        setMsg(`Matched ${created.length} passes (${summary}).`);
+        setMsg(
+          assignedBySelection
+            ? `Saved ${created.length} pass(es) under the selected traveller (${summary}). Names on the PDF didn’t match Pack automatically.`
+            : `Matched ${created.length} passes (${summary}).`,
+        );
         if (matched[0]?.personId) setFilterPerson(matched[0].personId);
         return;
       }

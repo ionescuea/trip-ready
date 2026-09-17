@@ -91,6 +91,31 @@ export function createTicketMeta(opts: {
 }
 
 /**
+ * Airline-style passenger tokens printed on a pass: SURNAME/GIVEN…
+ * e.g. "MOROSANU/ELENA", "IONESCU/ELENA-ALEXANDRA"
+ */
+export function extractAirlinePassengerHints(pageText: string): string[] {
+  const raw = pageText.toUpperCase();
+  const hints: string[] = [];
+  const re = /\b([A-ZÁÉÍÓÚÂÎĂȘŢ]{2,})\s*\/\s*([A-ZÁÉÍÓÚÂÎĂȘŢ][A-ZÁÉÍÓÚÂÎĂȘŢ\-\s]{0,40})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw))) {
+    const surname = m[1]!.trim();
+    const given = m[2]!.trim().replace(/\s+/g, " ");
+    if (surname.length < 2 || given.length < 1) continue;
+    hints.push(`${surname}/${given}`);
+    if (hints.length >= 8) break;
+  }
+  return hints;
+}
+
+function scoreHintAgainstPerson(hint: string, personName: string): number {
+  const [surnameRaw, givenRaw = ""] = hint.split("/");
+  const hintName = `${givenRaw} ${surnameRaw}`.trim();
+  return scorePersonInPassText(hintName, personName);
+}
+
+/**
  * How strongly a boarding-pass page’s text matches a traveller name.
  * Prefers full name / surname+given (e.g. Elena Morosanu), not first name alone.
  */
@@ -153,24 +178,78 @@ export function scorePersonInPassText(pageText: string, personName: string): num
 
 const MATCH_THRESHOLD = 65;
 
+function pickBestPersonForPage(
+  pageText: string,
+  pool: { id: string; name: string }[],
+): { personId: string; personName: string; score: number } | null {
+  if (!pageText.trim() || pool.length === 0) return null;
+
+  // 1) Prefer an explicit SURNAME/GIVEN hit — first hint is usually this pass’s passenger
+  const hints = extractAirlinePassengerHints(pageText);
+  for (const hint of hints) {
+    const hinted = pool
+      .map((person) => ({
+        personId: person.id,
+        personName: person.name.trim() || "Traveller",
+        score: scoreHintAgainstPerson(hint, person.name),
+      }))
+      .filter((s) => s.score >= MATCH_THRESHOLD)
+      .sort((a, b) => b.score - a.score);
+    if (hinted.length === 0) continue;
+    if (hinted.length === 1 || hinted[0]!.score > hinted[1]!.score) {
+      return { ...hinted[0]!, score: Math.max(hinted[0]!.score, 96) };
+    }
+  }
+
+  // 2) Whole-page scores; break ties with uniqueness of surname hits
+  const scored = pool
+    .map((person) => ({
+      personId: person.id,
+      personName: person.name.trim() || "Traveller",
+      score: scorePersonInPassText(pageText, person.name),
+      surname: nameTokens(person.name).filter((t) => t.length > 1).at(-1) ?? "",
+    }))
+    .filter((s) => s.score >= MATCH_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) return null;
+  if (scored.length === 1 || scored[0]!.score > scored[1]!.score) {
+    return scored[0]!;
+  }
+
+  // Tied scores (group list on every page): pick the person whose surname appears
+  // in an airline SURNAME/… pattern, else the longest full-name hit.
+  const hay = normalizeName(pageText);
+  const tiedScore = scored[0]!.score;
+  const tied = scored.filter((s) => s.score === tiedScore);
+  const withAirlineSurname = tied.filter((s) => {
+    if (!s.surname) return false;
+    return new RegExp(`\\b${s.surname}\\s*/`, "i").test(hay);
+  });
+  if (withAirlineSurname.length === 1) return withAirlineSurname[0]!;
+
+  const byNameLen = [...tied].sort(
+    (a, b) => b.personName.length - a.personName.length,
+  );
+  if (
+    byNameLen.length >= 2 &&
+    byNameLen[0]!.personName.length > byNameLen[1]!.personName.length + 2
+  ) {
+    return byNameLen[0]!;
+  }
+
+  // Still ambiguous — don’t guess
+  return null;
+}
+
 /** Best unique traveller match for one page of pass text. */
 export function matchPersonFromPassText(
   pageText: string,
   people: { id: string; name: string }[],
   alreadyUsed: Set<string> = new Set(),
 ): string | null {
-  const scored = people
-    .filter((p) => !alreadyUsed.has(p.id) && p.name.trim())
-    .map((p) => ({
-      id: p.id,
-      score: scorePersonInPassText(pageText, p.name),
-    }))
-    .filter((s) => s.score >= MATCH_THRESHOLD)
-    .sort((a, b) => b.score - a.score);
-
-  if (scored.length === 0) return null;
-  if (scored.length > 1 && scored[0]!.score === scored[1]!.score) return null;
-  return scored[0]!.id;
+  const pool = people.filter((p) => !alreadyUsed.has(p.id) && p.name.trim());
+  return pickBestPersonForPage(pageText, pool)?.personId ?? null;
 }
 
 export type PageForAssign = {
@@ -198,20 +277,8 @@ export function assignPassPagesByName(
     [];
 
   for (const page of pages) {
-    const scored = pool
-      .map((person) => ({
-        personId: person.id,
-        personName: person.name.trim() || "Traveller",
-        score: scorePersonInPassText(page.text, person.name),
-      }))
-      .filter((s) => s.score >= MATCH_THRESHOLD)
-      .sort((a, b) => b.score - a.score);
-
-    if (scored.length === 0) continue;
-    // Skip ambiguous pages (two travellers score the same)
-    if (scored.length > 1 && scored[0]!.score === scored[1]!.score) continue;
-
-    const best = scored[0]!;
+    const best = pickBestPersonForPage(page.text, pool);
+    if (!best) continue;
     out.push({
       personId: best.personId,
       personName: best.personName,
