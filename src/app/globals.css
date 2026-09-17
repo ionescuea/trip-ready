@@ -399,12 +399,14 @@ body {
 
 .leave-flow-arrow {
   flex: 0 0 auto;
-  width: 1.1rem;
+  width: 1.35rem;
   text-align: center;
-  opacity: 0.5;
-  font-size: 0.95rem;
+  opacity: 0.85;
+  font-size: 1.15rem;
+  font-weight: 700;
   line-height: 1;
   margin-top: 0.4rem;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .leave-flow-step {
@@ -499,24 +501,27 @@ body {
 
   .leave-flow-arrow {
     width: 100%;
-    margin: 0;
+    margin: 0.1rem 0 0.15rem;
     text-align: center;
     line-height: 1;
-    height: 0.95rem;
+    height: 1.45rem;
     position: relative;
-    opacity: 0.45;
+    opacity: 1;
     /* Hide → ; show ↓ via ::after */
     color: transparent;
   }
 
   .leave-flow-arrow::after {
     content: "↓";
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.95);
     position: absolute;
     left: 50%;
-    top: 0;
-    transform: translateX(-50%);
-    font-size: 0.85rem;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
 
   .leave-flow-step {
