@@ -7,7 +7,7 @@ import { ViewOnlyBanner } from "@/components/PermissionBanners";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { renderPdfUrlToImages, splitPdfFileToPages } from "@/lib/pdf";
+import { preferredPdfScale, renderPdfUrlToImages, splitPdfFileToPages } from "@/lib/pdf";
 import { createClient } from "@/lib/supabase/client";
 import {
   deleteTicketFile,
@@ -138,6 +138,17 @@ export function WalletPage() {
   }, [trip, canEditTrip, personId, myPersonId, setFilterPerson]);
 
   useEffect(() => {
+    if (!viewer) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.classList.add("wallet-viewer-open");
+    return () => {
+      document.body.style.overflow = prev;
+      document.documentElement.classList.remove("wallet-viewer-open");
+    };
+  }, [viewer]);
+
+  useEffect(() => {
     if (!viewer || viewer.kind !== "pdf") {
       setPdfPages(null);
       setPdfStatus("idle");
@@ -150,7 +161,10 @@ export function WalletPage() {
     setPdfStatus("loading");
     setPdfError(null);
 
-    void renderPdfUrlToImages(viewer.url, { scale: 2.25, maxPages: 12 })
+    void renderPdfUrlToImages(viewer.url, {
+      scale: preferredPdfScale(),
+      maxPages: 12,
+    })
       .then((pages) => {
         if (cancelled) return;
         setPdfPages(pages);
@@ -396,7 +410,7 @@ export function WalletPage() {
           <input
             ref={fileRef}
             type="file"
-            accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+            accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif"
             hidden
             onChange={(e) => void onFileChosen(e.target.files?.[0] ?? null)}
           />
@@ -502,8 +516,10 @@ export function WalletPage() {
           </div>
           <div className="wallet-viewer-body">
             {viewer.kind === "image" ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={viewer.url} alt={viewer.ticket.label} />
+              <div className="wallet-image-stage">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={viewer.url} alt={viewer.ticket.label} />
+              </div>
             ) : pdfStatus === "loading" ? (
               <p className="wallet-pdf-status">Preparing boarding pass…</p>
             ) : pdfPages && pdfPages.length > 0 ? (

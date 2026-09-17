@@ -54,14 +54,43 @@ function pageItemsToText(items: TextItem[]): string {
     .join("\n");
 }
 
+async function configurePdfWorker() {
+  const pdfjs = await import("pdfjs-dist");
+  // Same-origin file in /public — import.meta worker URLs often fail on iOS/Samsung.
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  return pdfjs;
+}
+
+/** Cap canvas size so iOS / Android don’t blank out on large boarding-pass pages. */
+function safeRenderScale(
+  pageWidthPt: number,
+  pageHeightPt: number,
+  desired: number,
+): number {
+  const MAX_EDGE = 2048;
+  const MAX_PIXELS = 3_500_000;
+  let scale = desired;
+  if (pageWidthPt * scale > MAX_EDGE || pageHeightPt * scale > MAX_EDGE) {
+    scale = Math.min(scale, MAX_EDGE / pageWidthPt, MAX_EDGE / pageHeightPt);
+  }
+  if (pageWidthPt * scale * pageHeightPt * scale > MAX_PIXELS) {
+    scale = Math.sqrt(MAX_PIXELS / (pageWidthPt * pageHeightPt));
+  }
+  return Math.max(0.75, scale);
+}
+
+export function preferredPdfScale(): number {
+  if (typeof window === "undefined") return 2;
+  const narrow = window.innerWidth < 700;
+  const coarse =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  return narrow || coarse ? 1.55 : 2.25;
+}
+
 /** Extract plain text from a PDF File in the browser (PDF.js). */
 export async function extractTextFromPdf(file: File): Promise<string> {
-  const pdfjs = await import("pdfjs-dist");
-
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
+  const pdfjs = await configurePdfWorker();
 
   const data = new Uint8Array(await file.arrayBuffer());
   const loadingTask = pdfjs.getDocument({ data });
@@ -84,18 +113,9 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   return text;
 }
 
-async function configurePdfWorker() {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
-  return pdfjs;
-}
-
 /**
- * Rasterise a PDF (signed URL or data URL) to PNG data URLs for in-app viewing.
- * Used by Wallet — phones often show a blank page for PDF iframes.
+ * Rasterise a PDF (signed URL or data URL) for in-app viewing.
+ * Phones often show a blank page for PDF iframes.
  */
 export async function renderPdfUrlToImages(
   url: string,
@@ -115,23 +135,27 @@ export async function renderPdfBytesToImages(
 ): Promise<string[]> {
   const pdfjs = await configurePdfWorker();
   const maxPages = opts?.maxPages ?? 12;
-  const scale = opts?.scale ?? 2;
+  const desired = opts?.scale ?? preferredPdfScale();
   const pdf = await pdfjs.getDocument({ data }).promise;
   const images: string[] = [];
   const limit = Math.min(pdf.numPages, maxPages);
 
   for (let pageNum = 1; pageNum <= limit; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
+    const base = page.getViewport({ scale: 1 });
+    const scale = safeRenderScale(base.width, base.height, desired);
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    const canvasContext = canvas.getContext("2d");
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+    const canvasContext = canvas.getContext("2d", { alpha: false });
     if (!canvasContext) {
       throw new Error("Could not draw the boarding pass.");
     }
     await page.render({ canvasContext, canvas, viewport }).promise;
-    images.push(canvas.toDataURL("image/jpeg", 0.92));
+    images.push(canvas.toDataURL("image/jpeg", 0.88));
+    canvas.width = 0;
+    canvas.height = 0;
   }
 
   if (images.length === 0) {
@@ -156,20 +180,22 @@ export async function splitPdfFileToPages(
 ): Promise<SplitPdfPage[]> {
   const pdfjs = await configurePdfWorker();
   const maxPages = opts?.maxPages ?? 12;
-  const scale = opts?.scale ?? 2.25;
+  const desired = opts?.scale ?? preferredPdfScale();
   const data = new Uint8Array(await file.arrayBuffer());
   const pdf = await pdfjs.getDocument({ data }).promise;
   const limit = Math.min(pdf.numPages, maxPages);
   const pages: SplitPdfPage[] = [];
-  const base = file.name.replace(/\.pdf$/i, "") || "boarding-pass";
+  const baseName = file.name.replace(/\.pdf$/i, "") || "boarding-pass";
 
   for (let pageNum = 1; pageNum <= limit; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
+    const base = page.getViewport({ scale: 1 });
+    const scale = safeRenderScale(base.width, base.height, desired);
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    const canvasContext = canvas.getContext("2d");
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+    const canvasContext = canvas.getContext("2d", { alpha: false });
     if (!canvasContext) {
       throw new Error("Could not draw the boarding pass.");
     }
@@ -183,9 +209,12 @@ export async function splitPdfFileToPages(
       text = "";
     }
 
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+    canvas.width = 0;
+    canvas.height = 0;
+
     const blob = await (await fetch(dataUrl)).blob();
-    const pageFile = new File([blob], `${base}-p${pageNum}.jpg`, {
+    const pageFile = new File([blob], `${baseName}-p${pageNum}.jpg`, {
       type: "image/jpeg",
     });
     pages.push({ page: pageNum, file: pageFile, dataUrl, text });

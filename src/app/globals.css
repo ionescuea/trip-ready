@@ -1888,7 +1888,7 @@ body {
 .wallet-card {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.75rem 1rem;
   padding: 1rem 1.1rem;
@@ -1902,47 +1902,58 @@ body {
   flex-direction: column;
   gap: 0.2rem;
   min-width: 0;
+  flex: 1 1 12rem;
 }
 
 .wallet-card-copy strong {
   font-size: 1.02rem;
+  overflow-wrap: anywhere;
 }
 
 .wallet-card-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  flex: 1 1 100%;
 }
 
-.wallet-assign select {
-  font: inherit;
-  font-size: 0.88rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: #fff;
-  max-width: 9.5rem;
+.wallet-card-actions .btn {
+  min-height: 2.75rem;
+  flex: 1 1 auto;
+  justify-content: center;
 }
 
 .wallet-person-picker {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  padding: 0.15rem 0.1rem 0.35rem;
+  margin: 0 -0.15rem;
+  scroll-snap-type: x proximity;
 }
 
 .wallet-person-chip {
   appearance: none;
+  -webkit-appearance: none;
   border: 1px solid var(--line);
   background: #fff;
   color: var(--ink);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  padding: 0.45rem 0.75rem;
+  padding: 0.65rem 0.95rem;
+  min-height: 2.75rem;
   border-radius: 999px;
   cursor: pointer;
   line-height: 1.2;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  touch-action: manipulation;
+  white-space: nowrap;
 }
 
 .wallet-person-chip.active {
@@ -1956,10 +1967,6 @@ body {
   cursor: not-allowed;
 }
 
-.wallet-card-actions .wallet-person-picker {
-  flex: 1 1 100%;
-}
-
 .wallet-person-heading {
   margin: 0 0 0.75rem;
   font-family: var(--font-display), Georgia, serif;
@@ -1967,13 +1974,29 @@ body {
   font-weight: 600;
 }
 
+html.wallet-viewer-open,
+html.wallet-viewer-open body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+html.wallet-viewer-open .bottom-nav {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .wallet-viewer {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 200;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-height: -webkit-fill-available;
   background: #0b0f12;
   display: flex;
   flex-direction: column;
+  overscroll-behavior: contain;
 }
 
 .wallet-viewer-bar {
@@ -1981,14 +2004,25 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-top));
+  flex: 0 0 auto;
+  padding: calc(0.65rem + env(safe-area-inset-top, 0px)) 1rem 0.65rem;
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.wallet-viewer-bar strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wallet-viewer-bar .btn-ghost {
   color: #fff;
   border-color: rgba(255, 255, 255, 0.25);
+  min-height: 2.5rem;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .wallet-viewer-body {
@@ -1997,20 +2031,33 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem;
+  padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
 }
 
-.wallet-viewer-body img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.wallet-viewer-body iframe {
+.wallet-image-stage,
+.wallet-pdf-pages {
   width: 100%;
   height: 100%;
-  border: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem;
+}
+
+.wallet-image-stage img,
+.wallet-pdf-pages img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
   background: #fff;
+  border-radius: 4px;
+  image-rendering: auto;
 }
 
 .wallet-pdf-fallback {
@@ -2032,29 +2079,39 @@ body {
 
 .wallet-pdf-fallback .btn-primary {
   display: inline-flex;
+  min-height: 2.75rem;
 }
 
 .wallet-pdf-status {
   margin: 0;
   color: #f4f6f7;
   font-weight: 550;
+  padding: 1rem;
+  text-align: center;
 }
 
-.wallet-pdf-pages {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem;
-}
+@media (max-width: 640px) {
+  .shell {
+    width: calc(100% - 1rem);
+    padding-left: 0;
+    padding-right: 0;
+  }
 
-.wallet-pdf-pages img {
-  width: min(100%, 720px);
-  height: auto;
-  background: #fff;
-  border-radius: 4px;
+  .wallet-card {
+    padding: 0.9rem 1rem;
+  }
+
+  .wallet-card-actions .btn {
+    width: 100%;
+  }
+
+  .wallet-viewer-bar {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .nav-item {
+    font-size: 0.62rem;
+    padding: 0.25rem 0.15rem;
+  }
 }
