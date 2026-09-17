@@ -201,11 +201,13 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
   } = flightArriveEarly(trip, fields, hasHold);
   const arriveEarlyMinutes = roundUpMinutes(arriveEarlyRaw);
 
+  // Prefer mapped legs when present so leave-home matches the pickup strip
+  // (avoids a stale total minutes value shifting the first clock time).
   const driveMinutes =
-    typeof trip.driveMinutes === "number" && trip.driveMinutes > 0
-      ? roundUpMinutes(trip.driveMinutes)
-      : mappedDriveMinutes > 0
-        ? mappedDriveMinutes
+    mappedDriveMinutes > 0
+      ? mappedDriveMinutes
+      : typeof trip.driveMinutes === "number" && trip.driveMinutes > 0
+        ? roundUpMinutes(trip.driveMinutes)
         : 0;
   const driveKnown = driveMinutes > 0;
 
@@ -486,4 +488,11 @@ export function formatWhenParts(d: Date | null): { date: string; time: string } 
       hour12: false,
     }),
   };
+}
+
+/** Compact day label when a timeline step crosses midnight vs the anchor. */
+export function formatFlowDayHint(d: Date, anchor: Date | null): string | null {
+  if (!anchor) return null;
+  if (d.toDateString() === anchor.toDateString()) return null;
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
 }

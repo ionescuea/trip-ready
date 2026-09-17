@@ -56,10 +56,8 @@ function addressQueryCandidates(place: string): string[] {
   const postcode = extractUkPostcode(spaced) || extractUkPostcode(raw);
   const candidates: string[] = [];
 
-  if (postcode) {
-    candidates.push(postcode);
-    candidates.push(`${postcode}, United Kingdom`);
-  }
+  // Prefer the full street address first. Bare postcode alone can snap to the
+  // wrong town centroid and inflate multi-stop drive times overnight.
   if (noCountry) candidates.push(noCountry);
   if (noCountry && !/united kingdom/i.test(noCountry)) {
     candidates.push(`${noCountry}, United Kingdom`);
@@ -75,6 +73,10 @@ function addressQueryCandidates(place: string): string[] {
       candidates.push(withoutPc);
       candidates.push(`${withoutPc}, United Kingdom`);
     }
+  }
+  if (postcode) {
+    candidates.push(`${postcode}, United Kingdom`);
+    candidates.push(postcode);
   }
   candidates.push(spaced);
   candidates.push(raw);

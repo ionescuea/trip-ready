@@ -53,6 +53,22 @@ body {
   padding: 0.85rem 0 calc(var(--nav-h) + 1.5rem);
 }
 
+/* Netlify’s “Powered by” pill sits bottom-right and covers the last nav item */
+@media (max-width: 720px) {
+  :root {
+    --netlify-badge-clearance: 3.25rem;
+  }
+
+  .shell {
+    padding-bottom: calc(var(--nav-h) + var(--netlify-badge-clearance) + 1.25rem);
+  }
+
+  .bottom-nav {
+    bottom: var(--netlify-badge-clearance);
+    z-index: 60;
+  }
+}
+
 .shell.loading {
   padding-top: 4rem;
   color: var(--muted);
@@ -424,6 +440,15 @@ body {
   letter-spacing: -0.02em;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
+}
+
+.leave-flow-day {
+  font-size: clamp(0.62rem, 2vw, 0.72rem);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  line-height: 1;
 }
 
 .leave-flow-name {

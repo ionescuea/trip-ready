@@ -14,7 +14,12 @@ import {
   passengersForPickup,
 } from "@/lib/driver";
 import { formatDuration } from "@/lib/duration";
-import { computeLeaveBy, formatWhen, formatWhenParts } from "@/lib/leaveBy";
+import {
+  computeLeaveBy,
+  formatFlowDayHint,
+  formatWhen,
+  formatWhenParts,
+} from "@/lib/leaveBy";
 import type { BookingDetails, DriveLeg, ExtraStop, Trip } from "@/lib/types";
 
 type Props = {
@@ -95,6 +100,7 @@ export function LeaveByPanel({
   const [estimating, setEstimating] = useState(false);
   const [estimateMsg, setEstimateMsg] = useState<string | null>(null);
   const autoTried = useRef(false);
+  const absurdRetried = useRef(false);
   const routeKeyRef = useRef("");
 
   const driver = getDriverPerson(trip);
@@ -106,17 +112,20 @@ export function LeaveByPanel({
       key: string;
       time: string;
       name: string;
+      dayHint?: string | null;
       personId?: string;
       mine?: boolean;
     }[] = [];
+    const anchor = plan.leaveHomeAt;
 
     const leave = formatWhenParts(plan.leaveHomeAt);
-    if (leave) {
+    if (leave && plan.leaveHomeAt) {
       const leaveName = driverFirstName(trip);
       steps.push({
         key: "leave",
         time: leave.time,
         name: leaveName,
+        dayHint: formatFlowDayHint(plan.leaveHomeAt, plan.parkingArriveBy),
         personId: driver?.id,
         mine: Boolean(driver?.id && myPersonId && driver.id === myPersonId),
       });
@@ -135,14 +144,20 @@ export function LeaveByPanel({
         key: p.id,
         time: parts.time,
         name,
+        dayHint: formatFlowDayHint(p.arriveAt, anchor),
         personId: p.personId,
         mine: Boolean(p.personId && myPersonId && p.personId === myPersonId),
       });
     }
 
     const parking = formatWhenParts(plan.parkingArriveBy);
-    if (parking) {
-      steps.push({ key: "parking", time: parking.time, name: "Parking" });
+    if (parking && plan.parkingArriveBy) {
+      steps.push({
+        key: "parking",
+        time: parking.time,
+        name: "Parking",
+        dayHint: formatFlowDayHint(plan.parkingArriveBy, anchor),
+      });
     }
 
     return steps;
@@ -257,7 +272,9 @@ export function LeaveByPanel({
     setEstimating(true);
     setEstimateMsg(null);
     try {
+      const driverId = trip.driverPersonId || driver?.id;
       const waypoints = (trip.extraStops ?? [])
+        .filter((s) => !driverId || s.personId !== driverId)
         .map((s) => ({
           id: s.id,
           label: s.label.trim() || "Stop",
@@ -357,19 +374,27 @@ export function LeaveByPanel({
       typeof trip.driveMinutes === "number" &&
       trip.driveMinutes > 150;
     const routeChanged = routeKeyRef.current !== routeFingerprint;
+    if (routeChanged) absurdRetried.current = false;
+    // Inflated totals (e.g. bad postcode-only geocode) — one fresh map pass
+    const absurdDrive =
+      typeof trip.driveMinutes === "number" &&
+      trip.driveMinutes > 280 &&
+      !absurdRetried.current;
     const needsEstimate =
       originReady &&
       Boolean(toTownValue) &&
       (trip.driveMinutes == null ||
         trip.driveMinutes <= 0 ||
         staleNightPad ||
+        absurdDrive ||
         routeChanged);
 
     if (!needsEstimate || estimating) return;
-    if (!routeChanged && autoTried.current) return;
+    if (!routeChanged && !absurdDrive && autoTried.current) return;
 
     const t = setTimeout(() => {
       autoTried.current = true;
+      if (absurdDrive) absurdRetried.current = true;
       routeKeyRef.current = routeFingerprint;
       void estimateDrive();
     }, 1200);
@@ -464,6 +489,9 @@ export function LeaveByPanel({
                   className={`leave-flow-step${step.mine ? " leave-flow-mine" : ""}`}
                 >
                   <span className="leave-flow-time">{step.time}</span>
+                  {step.dayHint ? (
+                    <span className="leave-flow-day">{step.dayHint}</span>
+                  ) : null}
                   <span className="leave-flow-name">{step.name}</span>
                 </div>
               </div>
