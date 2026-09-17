@@ -41,6 +41,7 @@ export function LeaveByPage() {
               ...(distanceKm !== undefined ? { driveDistanceKm: distanceKm } : {}),
               ...(legs !== undefined ? { driveLegs: legs } : { driveLegs: undefined }),
               ...(orderedStops !== undefined ? { extraStops: orderedStops } : {}),
+              updatedAt: new Date().toISOString(),
             }))
           }
           onChangeParking={(minutes) => update((t) => ({ ...t, parkingMinutes: minutes }))}

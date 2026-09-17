@@ -186,8 +186,8 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
     ? `Drive from ${fromTown} to ${toPlace}`
     : `Drive to ${toPlace}`;
 
-  const driveLegs = (trip.driveLegs ?? []).filter((l) => roundUpMinutes(l.minutes) > 0);
-  const mappedDriveMinutes = driveLegs.reduce(
+  const driveLegsRaw = (trip.driveLegs ?? []).filter((l) => roundUpMinutes(l.minutes) > 0);
+  const mappedDriveMinutes = driveLegsRaw.reduce(
     (sum, l) => sum + roundUpMinutes(l.minutes),
     0,
   );
@@ -203,12 +203,25 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
 
   // Prefer mapped legs when present so leave-home matches the pickup strip
   // (avoids a stale total minutes value shifting the first clock time).
-  const driveMinutes =
+  let driveMinutes =
     mappedDriveMinutes > 0
       ? mappedDriveMinutes
       : typeof trip.driveMinutes === "number" && trip.driveMinutes > 0
         ? roundUpMinutes(trip.driveMinutes)
         : 0;
+
+  // Guard: a single bad geocode used to push leave-home back to early evening
+  // (e.g. 7h for Plymouth→Bristol). Cap and ignore those legs for the strip.
+  const MAX_SANE_DRIVE_MIN = 210;
+  let driveLegs = driveLegsRaw;
+  if (driveMinutes > MAX_SANE_DRIVE_MIN) {
+    if (trip.driveDistanceKm && trip.driveDistanceKm > 0 && trip.driveDistanceKm < 350) {
+      driveMinutes = Math.max(60, Math.ceil((trip.driveDistanceKm / 75) * 60));
+    } else {
+      driveMinutes = Math.min(driveMinutes, 165);
+    }
+    driveLegs = [];
+  }
   const driveKnown = driveMinutes > 0;
 
   let airportArriveBy: Date | null = null;

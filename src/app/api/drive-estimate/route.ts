@@ -118,6 +118,21 @@ function destinationQueries(opts: {
   return [...new Set(queries.filter(Boolean))];
 }
 
+function pointInCorridor(
+  p: { lat: number; lon: number },
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+  maxKm: number,
+): boolean {
+  // Distance from point to segment AB via projection, approx in km
+  const ab = haversineKm(a, b) || 0.001;
+  const ap = haversineKm(a, p);
+  const bp = haversineKm(b, p);
+  // Outside the corridor if far from both ends and the path isn't roughly A→P→B
+  if (ap <= maxKm || bp <= maxKm) return true;
+  return ap + bp <= ab + maxKm * 2;
+}
+
 async function geocode(query: string): Promise<NominatimResult | null> {
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", query);
@@ -398,14 +413,16 @@ export async function POST(request: Request) {
 
     // Bias home geocode toward the trip’s from-town when both are set
     let originBias: { lat: number; lon: number } | undefined;
-    if (homeAddress && fromTown) {
-      const townHits = await geocodeCandidates(`${fromTown}, United Kingdom`, 2);
-      const town = pickNearestGeo(townHits);
-      if (town) originBias = parseGeo(town);
+    let townGeo: NominatimResult | null = null;
+    if (fromTown) {
+      townGeo = pickNearestGeo(
+        await geocodeCandidates(`${fromTown}, United Kingdom`, 2),
+      );
+      if (townGeo) originBias = parseGeo(townGeo);
     }
 
     // Geocode home + stops first so we can order nearest-to-home, then route.
-    const originGeo = await geocodeBest(originRaw, originBias);
+    let originGeo = await geocodeBest(originRaw, originBias);
     if (!originGeo) {
       return NextResponse.json(
         {
@@ -414,7 +431,48 @@ export async function POST(request: Request) {
         { status: 404 },
       );
     }
+
+    // If the start address snapped far from the trip’s from-town (e.g. wrong
+    // postcode / placeholder city), route from the town instead — otherwise
+    // leave-home jumps back many hours.
+    let originNote: string | null = null;
+    if (originBias && townGeo) {
+      const snapKm = haversineKm(parseGeo(originGeo), originBias);
+      if (snapKm > 60) {
+        originGeo = townGeo;
+        originNote = `Start address mapped ${Math.round(snapKm)} km from ${fromTown} — routing from ${fromTown} instead. Check the driver start postcode.`;
+      }
+    }
     const originCoords = parseGeo(originGeo);
+
+    // Resolve destination early so we can keep pick-ups on the home→parking corridor
+    let destGeo: NominatimResult | null = null;
+    let usedQuery = destQueries[0];
+    const destHits: { q: string; geo: NominatimResult }[] = [];
+    for (const q of destQueries) {
+      const geo = await geocode(q);
+      if (geo) destHits.push({ q, geo });
+    }
+    if (destHits.length > 0) {
+      const best = [...destHits].sort(
+        (a, b) =>
+          haversineKm(originCoords, parseGeo(a.geo)) -
+          haversineKm(originCoords, parseGeo(b.geo)),
+      )[0];
+      destGeo = best.geo;
+      usedQuery = best.q;
+    }
+    if (!destGeo) {
+      return NextResponse.json(
+        {
+          error: `Could not find “${toTown || destQueries[0]}”. Try a town, city, or airport name.`,
+        },
+        { status: 404 },
+      );
+    }
+    const destCoords = parseGeo(destGeo);
+    const homeToDestKm = haversineKm(originCoords, destCoords);
+    const corridorSlackKm = Math.max(80, homeToDestKm * 0.5);
 
     const midPoints: {
       id?: string;
@@ -423,6 +481,7 @@ export async function POST(request: Request) {
       geo: NominatimResult;
       distanceFromHomeKm: number;
     }[] = [];
+    const skippedStops: string[] = [];
     for (const w of stopWaypoints) {
       const geo = await geocodeBest(w.address, originCoords);
       if (!geo) {
@@ -433,8 +492,18 @@ export async function POST(request: Request) {
           { status: 404 },
         );
       }
+      const coords = parseGeo(geo);
       const distanceFromHomeKm =
-        Math.round(haversineKm(originCoords, parseGeo(geo)) * 10) / 10;
+        Math.round(haversineKm(originCoords, coords) * 10) / 10;
+      if (
+        !pointInCorridor(coords, originCoords, destCoords, corridorSlackKm) &&
+        distanceFromHomeKm > 100
+      ) {
+        skippedStops.push(
+          `${w.label} (${distanceFromHomeKm} km off the ${fromTown || "home"}→parking route)`,
+        );
+        continue;
+      }
       midPoints.push({
         id: w.id,
         label: w.label,
@@ -454,76 +523,101 @@ export async function POST(request: Request) {
     }));
 
     const destLabel = body.parkingName?.trim() || toTown || "Parking";
-    const routeAnchor =
-      midPoints.length > 0
-        ? parseGeo(midPoints[midPoints.length - 1].geo)
-        : originCoords;
+    const warnings = [originNote, ...skippedStops.map((s) => `Skipped pick-up ${s}`)].filter(
+      Boolean,
+    ) as string[];
 
     const googleKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
     if (googleKey) {
-      const originCandidates = addressQueryCandidates(originRaw);
+      // Prefer the resolved origin (may be from-town fallback) over raw candidates
+      const originQuery =
+        originNote && fromTown
+          ? `${fromTown}, United Kingdom`
+          : addressQueryCandidates(originRaw)[0] ?? originRaw;
       for (const dest of destQueries) {
-        for (const originQ of originCandidates) {
-          const points = [
-            { query: originQ, label: originPoint.label },
-            ...midPoints.map((w) => ({
-              query: addressQueryCandidates(w.address)[0] ?? w.address,
-              label: w.label,
-            })),
-            { query: dest, label: destLabel },
-          ];
-          const g = await googleMultiLeg(points, googleKey, nightDrive);
-          if (g) {
-            return NextResponse.json({
-              ...g,
-              litresEstimate: Math.round((g.distanceKm * 7) / 100 * 10) / 10,
-              source: "google",
-              destinationQuery: dest,
-              nightDrive,
-              waypointCount: midPoints.length,
-              orderedWaypoints,
-              note:
-                midPoints.length > 0
-                  ? `Pick-ups ordered nearest to home first. Multi-stop road time ~${g.driveMinutes} min across ${g.legs.length} legs. Stop dwell is separate.`
-                  : nightDrive
-                    ? `Road distance overnight ~${g.driveMinutes} min (rounded up). Traffic buffer is added in leave-by.`
-                    : `Road distance ~${g.driveMinutes} min (rounded up). Traffic buffer is added in leave-by.`,
-            });
-          }
+        const points = [
+          { query: originQuery, label: originPoint.label },
+          ...midPoints.map((w) => ({
+            query: addressQueryCandidates(w.address)[0] ?? w.address,
+            label: w.label,
+          })),
+          { query: dest, label: destLabel },
+        ];
+        const g = await googleMultiLeg(points, googleKey, nightDrive);
+        if (g && g.driveMinutes <= 210) {
+          return NextResponse.json({
+            ...g,
+            litresEstimate: Math.round((g.distanceKm * 7) / 100 * 10) / 10,
+            source: "google",
+            destinationQuery: dest,
+            nightDrive,
+            waypointCount: midPoints.length,
+            orderedWaypoints,
+            note: [
+              midPoints.length > 0
+                ? `Pick-ups ordered nearest to home first. Multi-stop road time ~${g.driveMinutes} min across ${g.legs.length} legs. Stop dwell is separate.`
+                : nightDrive
+                  ? `Road distance overnight ~${g.driveMinutes} min (rounded up). Traffic buffer is added in leave-by.`
+                  : `Road distance ~${g.driveMinutes} min (rounded up). Traffic buffer is added in leave-by.`,
+              ...warnings,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          });
         }
       }
     }
 
-    let destGeo: NominatimResult | null = null;
-    let usedQuery = destQueries[0];
-    const destHits: { q: string; geo: NominatimResult }[] = [];
-    for (const q of destQueries) {
-      const geo = await geocode(q);
-      if (geo) destHits.push({ q, geo });
-    }
-    if (destHits.length > 0) {
-      const best = [...destHits].sort(
-        (a, b) =>
-          haversineKm(routeAnchor, parseGeo(a.geo)) -
-          haversineKm(routeAnchor, parseGeo(b.geo)),
-      )[0];
-      destGeo = best.geo;
-      usedQuery = best.q;
-    }
-    if (!destGeo) {
-      return NextResponse.json(
-        {
-          error: `Could not find “${toTown || destQueries[0]}”. Try a town, city, or airport name.`,
-        },
-        { status: 404 },
-      );
-    }
-
-    const osrm = await osrmMultiLeg([
+    let osrm = await osrmMultiLeg([
       { geo: originGeo, label: originPoint.label },
       ...midPoints.map((m) => ({ geo: m.geo, label: m.label })),
       { geo: destGeo, label: destLabel },
     ]);
+
+    // Absurd multi-stop route (bad geocode) → direct home→parking + small stop pad
+    if (osrm && osrm.driveMinutes > 210) {
+      const tooLong = osrm.driveMinutes;
+      const direct = await osrmMultiLeg([
+        { geo: originGeo, label: originPoint.label },
+        { geo: destGeo, label: destLabel },
+      ]);
+      if (direct && direct.driveMinutes < tooLong) {
+        const pad = midPoints.length * 12;
+        const driveMinutes = direct.driveMinutes + pad;
+        const perStop = midPoints.length
+          ? Math.max(1, Math.round(driveMinutes / (midPoints.length + 1)))
+          : driveMinutes;
+        const legs: LegOut[] = [];
+        let remaining = driveMinutes;
+        const labels = [
+          originPoint.label,
+          ...midPoints.map((m) => m.label),
+          destLabel,
+        ];
+        for (let i = 0; i < labels.length - 1; i++) {
+          const isLast = i === labels.length - 2;
+          const minutes = isLast ? Math.max(1, remaining) : perStop;
+          remaining -= minutes;
+          legs.push({
+            fromLabel: labels[i],
+            toLabel: labels[i + 1],
+            minutes,
+            distanceKm:
+              Math.round((direct.distanceKm / (labels.length - 1)) * 10) / 10,
+          });
+        }
+        osrm = {
+          driveMinutes,
+          distanceKm: direct.distanceKm,
+          legs,
+          fromLabel: originPoint.label,
+          toLabel: destLabel,
+        };
+        warnings.push(
+          `Map route looked too long (${tooLong} min with detours) — used direct ${fromTown || "home"}→parking plus ${pad} min for pick-ups.`,
+        );
+      }
+    }
 
     if (!osrm) {
       return NextResponse.json(
@@ -542,10 +636,14 @@ export async function POST(request: Request) {
       nightDrive,
       waypointCount: midPoints.length,
       orderedWaypoints,
-      note:
+      note: [
         midPoints.length > 0
           ? `Pick-ups ordered nearest to home first. Multi-stop road time ~${osrm.driveMinutes} min across ${osrm.legs.length} legs. Stop dwell is separate.`
           : `Road distance ~${osrm.driveMinutes} min (rounded up). Traffic buffer is added in leave-by.`,
+        ...warnings,
+      ]
+        .filter(Boolean)
+        .join(" "),
     });
   } catch {
     return NextResponse.json({ error: "Drive estimate failed. Set minutes manually." }, { status: 500 });

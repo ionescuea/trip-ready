@@ -231,7 +231,7 @@ export function LeaveByPanel({
       .join("|");
     return [
       // Bump when geocoder/routing changes so saved long legs re-estimate once
-      "drv-v3",
+      "drv-v5",
       trip.homePostcode?.trim() ?? "",
       trip.fromTown?.trim() ?? "",
       toTownValue,
@@ -371,24 +371,19 @@ export function LeaveByPanel({
       (start.length >= 12 && /\s/.test(start));
     if (!startLooksReady) return;
 
-    const staleNightPad =
-      plan.nightDrive &&
-      typeof trip.driveMinutes === "number" &&
-      trip.driveMinutes > 150;
     const routeChanged = routeKeyRef.current !== routeFingerprint;
     if (routeChanged) absurdRetried.current = false;
     const maxLeg = Math.max(0, ...(trip.driveLegs ?? []).map((l) => l.minutes || 0));
-    // Inflated totals / single runaway leg — one fresh map pass
+    // Inflated totals / single runaway leg — force a fresh map pass
     const absurdDrive =
-      ((typeof trip.driveMinutes === "number" && trip.driveMinutes > 220) ||
-        maxLeg > 160) &&
+      ((typeof trip.driveMinutes === "number" && trip.driveMinutes > 210) ||
+        maxLeg > 150) &&
       !absurdRetried.current;
     const needsEstimate =
       originReady &&
       Boolean(toTownValue) &&
       (trip.driveMinutes == null ||
         trip.driveMinutes <= 0 ||
-        staleNightPad ||
         absurdDrive ||
         routeChanged);
 
