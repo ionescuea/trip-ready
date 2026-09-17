@@ -9,6 +9,11 @@ export function softNormalizeUkAddress(value: string): string {
   let v = value.replace(/\s+/g, " ").trim();
   if (!v) return "";
 
+  // Split outward like “P L2 1QG” → “PL2 1QG”
+  v = v.replace(/\b([A-Z])\s+([A-Z]\d[A-Z\d]?)\s+(\d[A-Z]{2})\b/gi, "$1$2 $3");
+  // “PL2 1 QG” → “PL2 1QG”
+  v = v.replace(/\b([A-Z]{1,2}\d[A-Z\d]?)\s+(\d)\s+([A-Z]{2})\b/gi, "$1 $2$3");
+
   // Jammed string ending in a postcode with no spaces: …PlymouthPL21QG
   v = v.replace(
     /([A-Za-z])([A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2})$/i,
@@ -19,6 +24,29 @@ export function softNormalizeUkAddress(value: string): string {
   v = v.replace(/\b([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})\b/gi, "$1 $2");
 
   return v.replace(/\s+/g, " ").trim();
+}
+
+/** Best-effort town/city from a UK street address (for map bias). */
+export function townFromUkAddress(address: string): string | undefined {
+  const v = softNormalizeUkAddress(address);
+  if (!v) return undefined;
+  const withoutPc = v
+    .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i, "")
+    .replace(/,\s*,+/g, ",")
+    .replace(/^,\s*|,\s*$/g, "")
+    .trim();
+  if (!withoutPc) return undefined;
+  const commaParts = withoutPc
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (commaParts.length >= 2) {
+    return commaParts[commaParts.length - 1];
+  }
+  // “41 Kent Road Plymouth” → Plymouth
+  const tokens = withoutPc.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) return tokens[tokens.length - 1];
+  return withoutPc;
 }
 
 /**

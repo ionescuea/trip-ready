@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddressField } from "@/components/AddressField";
 import { usePermissions } from "@/hooks/usePermissions";
-import { softNormalizeUkAddress } from "@/lib/addressFormat";
+import { softNormalizeUkAddress, townFromUkAddress } from "@/lib/addressFormat";
 import { getTripAirportLabel } from "@/lib/airports";
 import {
   driverFirstName,
@@ -251,6 +251,31 @@ export function LeaveByPanel({
     plan.nightDrive,
   ]);
 
+  // Keep from/to in sync for the map without extra form fields
+  useEffect(() => {
+    if (readOnly) return;
+    const start = getDriverStartAddress(trip);
+    const startReady = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(start);
+    if (startReady) {
+      const town = townFromUkAddress(start);
+      if (town && trip.fromTown?.trim() !== town) {
+        onChangeFromTown(town);
+      }
+    }
+    if (inferredTo && !trip.toTown?.trim()) {
+      onChangeToTown(inferredTo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    readOnly,
+    trip.homePostcode,
+    trip.driverPersonId,
+    trip.people,
+    trip.fromTown,
+    trip.toTown,
+    inferredTo,
+  ]);
+
   // Near parks (e.g. Oakwood): keep transfer at ~5 min; drop old 30–35 defaults
   useEffect(() => {
     if (readOnly) return;
@@ -288,7 +313,10 @@ export function LeaveByPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fromTown: trip.fromTown,
+          fromTown:
+            trip.fromTown?.trim() ||
+            townFromUkAddress(trip.homePostcode ?? "") ||
+            undefined,
           homeAddress: softNormalizeUkAddress(
             trip.homePostcode?.trim() || "",
           ) || undefined,
@@ -549,7 +577,7 @@ export function LeaveByPanel({
           <h2 style={{ fontSize: "1.05rem", margin: 0 }}>Driver & start</h2>
         </div>
         <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
-          Required — the route starts at the driver’s postcode. They are not a pick-up.
+          The drive starts here — the driver is not a pick-up.
         </p>
         <label className="field">
           <span>Driver</span>
@@ -571,41 +599,35 @@ export function LeaveByPanel({
           </select>
         </label>
         <AddressField
-          label="Start address / postcode (where the driver leaves)"
+          label="Start address / postcode"
           value={getDriverStartAddress(trip)}
           onChange={onChangeHomeAddress}
         />
+        {toTownValue ? (
+          <p className="route-summary muted">
+            Route to{" "}
+            <strong>{parking?.name?.trim() || toTownValue}</strong>
+            {parking?.airport ? ` (${parking.airport})` : ""}
+            {" — from the booking"}
+          </p>
+        ) : (
+          <p className="route-warn" style={{ marginTop: "0.65rem" }}>
+            Add a parking or flight booking so we know where you’re driving to.
+          </p>
+        )}
       </section>
-
-      <label className="field">
-        <span>Travelling from (town / city)</span>
-        <input
-          type="text"
-          value={trip.fromTown ?? ""}
-          placeholder="Any town or city"
-          onChange={(e) => onChangeFromTown(e.target.value)}
-        />
-      </label>
-
-      <label className="field">
-        <span>Travelling to (town / city)</span>
-        <input
-          type="text"
-          value={trip.toTown ?? ""}
-          placeholder={inferredTo || "Any town, city, or airport area"}
-          onChange={(e) => onChangeToTown(e.target.value)}
-        />
-      </label>
 
       {parking ? (
         <div className="parking-card">
-          <strong>Parking → airport transfer</strong>
+          <strong>Parking → airport</strong>
           <p>
             {parking.name || "Car park"}
-            {parking.airport ? ` at ${parking.airport}` : ""}
+            {parking.airport ? ` · ${parking.airport}` : ""}
+            {plan.transferMinutes > 0
+              ? ` · ~${plan.transferMinutes} min transfer`
+              : ""}
           </p>
           {parking.locationRelative ? <p>{parking.locationRelative}</p> : null}
-          {parking.terminal ? <p>Terminal: {parking.terminal}</p> : null}
           {parking.shuttleDetails || parking.shuttleIncluded ? (
             <p>{parking.shuttleDetails || parking.shuttleIncluded}</p>
           ) : null}

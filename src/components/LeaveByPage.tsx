@@ -6,6 +6,7 @@ import { ViewOnlyBanner } from "@/components/PermissionBanners";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { withDriver, withDriverStartAddress } from "@/lib/driver";
+import { townFromUkAddress } from "@/lib/addressFormat";
 import { withPersonAddress } from "@/lib/personAddress";
 
 export function LeaveByPage() {
@@ -29,7 +30,14 @@ export function LeaveByPage() {
           onChangeFromTown={(fromTown) => update((t) => ({ ...t, fromTown }))}
           onChangeToTown={(toTown) => update((t) => ({ ...t, toTown }))}
           onChangeHomeAddress={(address) =>
-            update((t) => withDriverStartAddress(t, address))
+            update((t) => {
+              const next = withDriverStartAddress(t, address);
+              const town = townFromUkAddress(address);
+              return {
+                ...next,
+                ...(town ? { fromTown: town } : {}),
+              };
+            })
           }
           onChangePersonAddress={(personId, address) =>
             update((t) => withPersonAddress(t, personId, address))
