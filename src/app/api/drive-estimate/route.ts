@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { softNormalizeUkAddress } from "@/lib/addressFormat";
+import { softNormalizeUkAddress, isUsableUkTownName } from "@/lib/addressFormat";
 import { resolveAirportQuery } from "@/lib/airports";
 
 export const runtime = "nodejs";
@@ -370,8 +370,11 @@ export async function POST(request: Request) {
       waypoints?: WaypointIn[];
     };
 
-    const homeAddress = body.homeAddress?.trim();
-    const fromTown = body.fromTown?.trim();
+    const homeAddress = body.homeAddress?.trim()
+      ? softNormalizeUkAddress(body.homeAddress.trim())
+      : "";
+    const fromTownRaw = body.fromTown?.trim();
+    const fromTown = isUsableUkTownName(fromTownRaw) ? fromTownRaw : undefined;
     const originRaw = homeAddress || fromTown;
     if (!originRaw) {
       return NextResponse.json(
@@ -438,11 +441,19 @@ export async function POST(request: Request) {
     // If the start address snapped far from the trip’s from-town (e.g. wrong
     // postcode / placeholder city), route from the town instead — otherwise
     // leave-home jumps back many hours.
+    // Never do this when we already have a solid UK postcode origin — a bad
+    // from-town like “1Q” used to replace Plymouth with a nonsense pin and
+    // skip nearby pick-ups.
     if (originBias && townGeo && !originNote) {
       const snapKm = haversineKm(parseGeo(originGeo), originBias);
       if (snapKm > 60) {
-        originGeo = townGeo;
-        originNote = `Start address mapped ${Math.round(snapKm)} km from ${fromTown} — routing from ${fromTown} instead. Check the driver start postcode.`;
+        const originPc = extractUkPostcode(originRaw);
+        if (originPc) {
+          originNote = `Using start postcode ${originPc} (ignored vague from-town “${fromTownRaw}”).`;
+        } else {
+          originGeo = townGeo;
+          originNote = `Start address mapped ${Math.round(snapKm)} km from ${fromTown} — routing from ${fromTown} instead. Check the driver start postcode.`;
+        }
       }
     }
     const originCoords = parseGeo(originGeo);
@@ -497,7 +508,10 @@ export async function POST(request: Request) {
       const coords = parseGeo(geo);
       const distanceFromHomeKm =
         Math.round(haversineKm(originCoords, coords) * 10) / 10;
+      // Keep stops near the driver even if slightly off the straight corridor
+      const nearOrigin = distanceFromHomeKm <= 40;
       if (
+        !nearOrigin &&
         !pointInCorridor(coords, originCoords, destCoords, corridorSlackKm) &&
         distanceFromHomeKm > 100
       ) {

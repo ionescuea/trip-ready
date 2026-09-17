@@ -49,13 +49,27 @@ export function townFromUkAddress(address: string): string | undefined {
     .split(",")
     .map((p) => p.trim())
     .filter(Boolean);
-  if (commaParts.length >= 2) {
-    return commaParts[commaParts.length - 1];
+  const candidate =
+    commaParts.length >= 2
+      ? commaParts[commaParts.length - 1]
+      : withoutPc.split(/\s+/).filter(Boolean).length >= 2
+        ? withoutPc.split(/\s+/).filter(Boolean).at(-1)
+        : withoutPc;
+  return isUsableUkTownName(candidate) ? candidate : undefined;
+}
+
+/**
+ * Reject postcode fragments mistakenly stored as from-town
+ * (e.g. “1Q”, “1QG”, “PL2”) — those break map bias and skip pick-ups.
+ */
+export function isUsableUkTownName(value?: string | null): boolean {
+  const t = (value ?? "").trim();
+  if (t.length < 3) return false;
+  if (/\d/.test(t)) return false;
+  if (/^(mr|mrs|ms|miss|dr|road|street|lane|avenue|close|drive|way)$/i.test(t)) {
+    return false;
   }
-  // “41 Kent Road Plymouth” → Plymouth
-  const tokens = withoutPc.split(/\s+/).filter(Boolean);
-  if (tokens.length >= 2) return tokens[tokens.length - 1];
-  return withoutPc;
+  return true;
 }
 
 /**

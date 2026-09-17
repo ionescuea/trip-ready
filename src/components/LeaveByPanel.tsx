@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddressField } from "@/components/AddressField";
 import { usePermissions } from "@/hooks/usePermissions";
-import { softNormalizeUkAddress, townFromUkAddress } from "@/lib/addressFormat";
+import { softNormalizeUkAddress, townFromUkAddress, isUsableUkTownName } from "@/lib/addressFormat";
 import { getTripAirportLabel } from "@/lib/airports";
 import {
   driverFirstName,
@@ -264,8 +264,12 @@ export function LeaveByPanel({
     const startReady = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(start);
     if (startReady) {
       const town = townFromUkAddress(start);
-      if (town && trip.fromTown?.trim() !== town) {
+      const current = trip.fromTown?.trim() || "";
+      if (town && current !== town) {
         onChangeFromTown(town);
+      } else if (!town && current && !isUsableUkTownName(current)) {
+        // Clear postcode fragments like “1Q” left over from older parses
+        onChangeFromTown("");
       }
     }
     if (inferredTo && !trip.toTown?.trim()) {
@@ -320,7 +324,9 @@ export function LeaveByPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fromTown:
-            trip.fromTown?.trim() ||
+            (isUsableUkTownName(trip.fromTown)
+              ? trip.fromTown.trim()
+              : undefined) ||
             townFromUkAddress(trip.homePostcode ?? "") ||
             undefined,
           homeAddress: softNormalizeUkAddress(
