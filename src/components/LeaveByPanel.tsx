@@ -598,23 +598,6 @@ export function LeaveByPanel({
         )}
       </section>
 
-      {parking ? (
-        <div className="parking-card">
-          <strong>Parking → airport</strong>
-          <p>
-            {parking.name || "Car park"}
-            {parking.airport ? ` · ${parking.airport}` : ""}
-            {plan.transferMinutes > 0
-              ? ` · ~${plan.transferMinutes} min transfer`
-              : ""}
-          </p>
-          {parking.locationRelative ? <p>{parking.locationRelative}</p> : null}
-          {parking.shuttleDetails || parking.shuttleIncluded ? (
-            <p>{parking.shuttleDetails || parking.shuttleIncluded}</p>
-          ) : null}
-        </div>
-      ) : null}
-
       <div className="row-2">
         <label className="field">
           <span>Drive (minutes)</span>
