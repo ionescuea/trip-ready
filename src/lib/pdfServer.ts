@@ -8,10 +8,8 @@ import { normalizeExtractedText } from "@/lib/pdfText";
 export async function extractTextFromPdfBuffer(
   data: Uint8Array,
 ): Promise<string> {
-  const pdf = await getDocumentProxy(data);
-  const result = await extractText(pdf, { mergePages: true });
-  const raw = Array.isArray(result.text) ? result.text.join("\n\n") : result.text;
-  const text = normalizeExtractedText(String(raw ?? ""));
+  const pages = await extractTextPagesFromPdfBuffer(data);
+  const text = normalizeExtractedText(pages.join("\n\n"));
 
   if (!text) {
     throw new Error(
@@ -19,4 +17,14 @@ export async function extractTextFromPdfBuffer(
     );
   }
   return text;
+}
+
+/** One string per PDF page (empty string if a page has no extractable text). */
+export async function extractTextPagesFromPdfBuffer(
+  data: Uint8Array,
+): Promise<string[]> {
+  const pdf = await getDocumentProxy(data);
+  const result = await extractText(pdf, { mergePages: false });
+  const raw = Array.isArray(result.text) ? result.text : [String(result.text ?? "")];
+  return raw.map((p) => normalizeExtractedText(String(p ?? "")));
 }

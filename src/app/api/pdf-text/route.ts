@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { extractTextFromPdfBuffer } from "@/lib/pdfServer";
+import {
+  extractTextFromPdfBuffer,
+  extractTextPagesFromPdfBuffer,
+} from "@/lib/pdfServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,8 +36,24 @@ export async function POST(request: Request) {
     }
 
     const data = new Uint8Array(await file.arrayBuffer());
-    const text = await extractTextFromPdfBuffer(data);
+    const wantPages = form.get("pages") === "1" || form.get("pages") === "true";
 
+    if (wantPages) {
+      const pages = await extractTextPagesFromPdfBuffer(data);
+      const text = pages.filter(Boolean).join("\n\n");
+      if (!text.trim()) {
+        return NextResponse.json(
+          {
+            error:
+              "No readable text in this PDF (it may be a scanned image). Paste the email text instead.",
+          },
+          { status: 422 },
+        );
+      }
+      return NextResponse.json({ text, pages, sourceName: name });
+    }
+
+    const text = await extractTextFromPdfBuffer(data);
     return NextResponse.json({ text, sourceName: name });
   } catch (err) {
     console.error("pdf-text failed:", err);

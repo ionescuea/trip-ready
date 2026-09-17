@@ -8,6 +8,7 @@ import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { preferredPdfScale, renderPdfUrlToImages, splitPdfFileToPages } from "@/lib/pdf";
+import type { SplitPdfPage } from "@/lib/pdf";
 import { createClient } from "@/lib/supabase/client";
 import {
   deleteTicketFile,
@@ -29,6 +30,40 @@ import {
 import type { Person, TicketPass } from "@/lib/types";
 
 const WALLET_FILTER_KEY = "trip-ready-wallet-filter-person";
+
+/** Prefer server unpdf text when the phone pdf.js extract is empty/weak. */
+async function withServerPageText(
+  file: File,
+  pages: SplitPdfPage[],
+): Promise<SplitPdfPage[]> {
+  const weak =
+    pages.length === 0 ||
+    pages.every((p) => p.text.trim().length < 12) ||
+    pages.some((p) => p.text.trim().length < 8);
+
+  if (!weak) return pages;
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("pages", "1");
+    const res = await fetch("/api/pdf-text", { method: "POST", body: form });
+    const data = (await res.json()) as {
+      error?: string;
+      pages?: string[];
+    };
+    if (!res.ok || !data.pages?.length) return pages;
+
+    return pages.map((p, i) => {
+      const serverText = data.pages?.[i]?.trim() || "";
+      if (!serverText) return p;
+      if (p.text.trim().length >= serverText.length) return p;
+      return { ...p, text: serverText };
+    });
+  } catch {
+    return pages;
+  }
+}
 
 function PersonFilterPicker({
   people,
@@ -223,12 +258,22 @@ export function WalletPage() {
 
       if (isPdf) {
         setMsg("Matching boarding passes to traveller names…");
-        const pages = await splitPdfFileToPages(file);
-        const matched = assignPassPagesByName(pages, trip.people);
+        let pages = await splitPdfFileToPages(file);
+        pages = await withServerPageText(file, pages);
+        let matched = assignPassPagesByName(pages, trip.people);
+
+        // Second chance: always overlay server text if first pass matched nothing
+        if (matched.length === 0) {
+          pages = await withServerPageText(file, pages.map((p) => ({ ...p, text: "" })));
+          matched = assignPassPagesByName(pages, trip.people);
+        }
 
         if (matched.length === 0) {
+          const anyText = pages.some((p) => p.text.trim().length >= 8);
           setMsg(
-            "Couldn’t match roster names on this PDF. In Pack, use the same names as on the passes (e.g. Elena Morosanu), then upload again.",
+            anyText
+              ? "Couldn’t match roster names on this PDF. In Pack, use the same names as on the passes (e.g. Elena Morosanu), then upload again."
+              : "Couldn’t read passenger names from this PDF on your phone. Try again on Wi‑Fi, or use a text PDF (not a photo scan).",
           );
           return;
         }

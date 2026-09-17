@@ -109,6 +109,26 @@ export function scorePersonInPassText(pageText: string, personName: string): num
   const tokens = nameTokens(personName).filter((t) => t.length > 1);
   if (!tokens.length) return 0;
 
+  // SURNAME + all given names jammed: MOROSANUELENA / IONESCUELENAALEXANDRA
+  if (tokens.length >= 2) {
+    const surname = tokens[tokens.length - 1]!;
+    const givens = tokens.slice(0, -1);
+    const surnameThenGivens = `${surname}${givens.join("")}`;
+    const givensThenSurname = `${givens.join("")}${surname}`;
+    if (
+      surnameThenGivens.length > 3 &&
+      compactHay.includes(surnameThenGivens)
+    ) {
+      return 92;
+    }
+    if (
+      givensThenSurname.length > 3 &&
+      compactHay.includes(givensThenSurname)
+    ) {
+      return 90;
+    }
+  }
+
   const hits = tokens.filter((t) => hay.includes(t) || compactHay.includes(t));
   if (hits.length === tokens.length) return 85;
 
@@ -117,6 +137,7 @@ export function scorePersonInPassText(pageText: string, personName: string): num
   const surnameHit = hay.includes(surname) || compactHay.includes(surname);
   const givenHits = given.filter((t) => hay.includes(t) || compactHay.includes(t));
 
+  // Surname + any given token (covers Elena-Alexandra when pass only prints Elena)
   if (surnameHit && givenHits.length > 0) return 75;
   // Surname + first initial: MOROSANU/E
   if (
