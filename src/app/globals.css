@@ -1970,3 +1970,24 @@ body {
   border: 0;
   background: #fff;
 }
+
+.wallet-pdf-fallback {
+  max-width: 22rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+  text-align: center;
+  color: #f4f6f7;
+}
+
+.wallet-pdf-fallback p {
+  margin: 0 0 1.25rem;
+  line-height: 1.45;
+}
+
+.wallet-pdf-fallback .muted {
+  color: rgba(244, 246, 247, 0.65);
+}
+
+.wallet-pdf-fallback .btn-primary {
+  display: inline-flex;
+}

@@ -37,6 +37,7 @@ export function WalletPage() {
   const [viewer, setViewer] = useState<{
     ticket: TicketPass;
     url: string;
+    kind: "image" | "pdf";
   } | null>(null);
 
   const visible = useMemo(() => {
@@ -50,13 +51,33 @@ export function WalletPage() {
   const openPass = useCallback(
     async (ticket: TicketPass) => {
       setMsg(null);
-      const client = configured && user ? createClient() : null;
-      const res = await resolveTicketUrl({ client, ticket });
-      if (res.error || !res.url) {
-        setMsg(res.error || "Could not open pass.");
-        return;
+      setBusy(true);
+      try {
+        const client = configured && user ? createClient() : null;
+        const res = await resolveTicketUrl({ client, ticket });
+        if (res.error || !res.url) {
+          setMsg(res.error || "Could not open pass.");
+          return;
+        }
+
+        const asImage =
+          isImageTicket(ticket) ||
+          /\.(jpe?g|png|webp|gif)$/i.test(ticket.fileName);
+
+        if (asImage) {
+          setViewer({ ticket, url: res.url, kind: "image" });
+          return;
+        }
+
+        // In-app PDF iframes are blank on most phones — use the system viewer.
+        const opened = window.open(res.url, "_blank", "noopener,noreferrer");
+        setViewer({ ticket, url: res.url, kind: "pdf" });
+        if (!opened) {
+          setMsg("Allow pop-ups, or tap Open PDF on the next screen.");
+        }
+      } finally {
+        setBusy(false);
       }
-      setViewer({ ticket, url: res.url });
     },
     [configured, user],
   );
@@ -266,11 +287,27 @@ export function WalletPage() {
             </button>
           </div>
           <div className="wallet-viewer-body">
-            {isImageTicket(viewer.ticket) ? (
+            {viewer.kind === "image" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={viewer.url} alt={viewer.ticket.label} />
             ) : (
-              <iframe title={viewer.ticket.label} src={viewer.url} />
+              <div className="wallet-pdf-fallback">
+                <p>
+                  Boarding pass PDFs open in your phone’s PDF viewer — that’s more
+                  reliable for the airport QR code.
+                </p>
+                <a
+                  className="btn btn-primary"
+                  href={viewer.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open PDF
+                </a>
+                <p className="muted" style={{ margin: "1rem 0 0", fontSize: "0.88rem" }}>
+                  Tip: a clear photo of the QR also works full-screen in Wallet.
+                </p>
+              </div>
             )}
           </div>
         </div>
