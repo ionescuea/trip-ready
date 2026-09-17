@@ -557,9 +557,6 @@ export function LeaveByPanel({
         <div className="panel-head" style={{ padding: 0, marginBottom: "0.65rem" }}>
           <h2 style={{ fontSize: "1.05rem", margin: 0 }}>Driver & start</h2>
         </div>
-        <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
-          The drive starts here — the driver is not a pick-up.
-        </p>
         <label className="field">
           <span>Driver</span>
           <select
