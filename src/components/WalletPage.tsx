@@ -15,10 +15,10 @@ import {
   uploadTicketFile,
 } from "@/lib/ticketStorage";
 import {
+  assignPassPagesByName,
   createTicketMeta,
   isImageTicket,
   isPdfTicket,
-  matchPersonFromPassText,
   ticketPersonLabel,
   ticketsForViewer,
   withTicketAdded,
@@ -35,21 +35,23 @@ function PersonAssignPicker({
   value,
   disabled,
   onChange,
+  everyoneLabel = "Everyone",
 }: {
   people: Person[];
   value: string;
   disabled?: boolean;
   onChange: (personId: string) => void;
+  everyoneLabel?: string;
 }) {
   return (
-    <div className="wallet-person-picker" role="group" aria-label="Who is this for">
+    <div className="wallet-person-picker" role="group" aria-label="Traveller">
       <button
         type="button"
         className={`wallet-person-chip${value === "" ? " active" : ""}`}
         disabled={disabled}
         onClick={() => onChange("")}
       >
-        Everyone
+        {everyoneLabel}
       </button>
       {people.map((p) => (
         <button
@@ -113,8 +115,9 @@ export function WalletPage() {
     return ticketsForViewer(trip, {
       personId: myPersonId,
       isOwner: canEditTrip,
+      filterPersonId: canEditTrip ? personId : null,
     });
-  }, [trip, myPersonId, canEditTrip]);
+  }, [trip, myPersonId, canEditTrip, personId]);
 
   useEffect(() => {
     if (!viewer || viewer.kind !== "pdf") {
@@ -129,7 +132,7 @@ export function WalletPage() {
     setPdfStatus("loading");
     setPdfError(null);
 
-    void renderPdfUrlToImages(viewer.url, { scale: 2.25, maxPages: 4 })
+    void renderPdfUrlToImages(viewer.url, { scale: 2.25, maxPages: 12 })
       .then((pages) => {
         if (cancelled) return;
         setPdfPages(pages);
@@ -178,8 +181,7 @@ export function WalletPage() {
     if (!file || !trip || !canEditTrip) return;
     setBusy(true);
     setMsg(null);
-    // Prefer ref — iOS often resets React state when returning from the file picker.
-    const assignedPersonId = assignPersonRef.current || personId || "";
+    const filterPersonId = assignPersonRef.current || personId || "";
     const baseLabel = label.trim() || file.name.replace(/\.[^.]+$/, "");
     try {
       const client = configured && user ? createClient() : null;
@@ -187,90 +189,90 @@ export function WalletPage() {
       const isPdf =
         file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 
-      // Multi-page boarding PDFs → one wallet pass per page, matched to travellers.
       if (isPdf) {
-        setMsg("Splitting boarding pass pages…");
+        setMsg("Reading names on boarding passes…");
         const pages = await splitPdfFileToPages(file);
-        const used = new Set<string>();
-        const created: TicketPass[] = [];
+        const matched = assignPassPagesByName(pages, trip.people, {
+          onlyPersonId: filterPersonId || null,
+        });
 
-        for (const page of pages) {
-          let pagePersonId: string | null = assignedPersonId || null;
-          if (!pagePersonId) {
-            pagePersonId = matchPersonFromPassText(page.text, trip.people, used);
-            if (pagePersonId) used.add(pagePersonId);
-          }
-
-          // Roster order fallback when page count matches travellers and nothing matched.
-          if (
-            !pagePersonId &&
-            !assignedPersonId &&
-            pages.length === trip.people.length &&
-            trip.people[page.page - 1]
-          ) {
-            const candidate = trip.people[page.page - 1]!.id;
-            if (!used.has(candidate)) {
-              pagePersonId = candidate;
-              used.add(candidate);
-            }
-          }
-
-          const personName = pagePersonId
-            ? trip.people.find((p) => p.id === pagePersonId)?.name.trim()
-            : null;
-          const pageLabel =
-            pages.length === 1
-              ? baseLabel
-              : personName
-                ? `${baseLabel} — ${personName}`
-                : `${baseLabel} (${page.page}/${pages.length})`;
-
+        if (matched.length === 0) {
+          // No name match — store as one pass for the selected person or Everyone
           const draft = createTicketMeta({
-            label: pageLabel,
-            fileName: page.file.name,
-            mimeType: "image/jpeg",
-            personId: pagePersonId,
+            label: baseLabel,
+            fileName: file.name,
+            mimeType: "application/pdf",
+            personId: filterPersonId || null,
           });
           const up = await uploadTicketFile({
             client,
             cloudTripId,
             ticketId: draft.id,
-            file: page.file,
+            file,
           });
           if (up.error) {
             setMsg(up.error);
-            if (created.length) {
-              update((t) => withTicketsAdded(t, created));
-            }
+            return;
+          }
+          update((t) =>
+            withTicketAdded(t, {
+              ...draft,
+              storagePath: up.storagePath,
+              dataUrl: up.dataUrl,
+            }),
+          );
+          setLabel("");
+          setMsg(
+            filterPersonId
+              ? "Pass added. Couldn’t read a matching name on the PDF — assigned to the traveller you selected."
+              : "Pass added for Everyone. Couldn’t match roster names on the PDF — pick a traveller on the card, or check names in Pack match the pass.",
+          );
+          return;
+        }
+
+        const created: TicketPass[] = [];
+        for (const row of matched) {
+          const draft = createTicketMeta({
+            label: `${baseLabel} — ${row.personName}`,
+            fileName: row.page.file.name,
+            mimeType: "image/jpeg",
+            personId: row.personId,
+          });
+          const up = await uploadTicketFile({
+            client,
+            cloudTripId,
+            ticketId: draft.id,
+            file: row.page.file,
+          });
+          if (up.error) {
+            setMsg(up.error);
+            if (created.length) update((t) => withTicketsAdded(t, created));
             return;
           }
           created.push({
             ...draft,
             storagePath: up.storagePath,
-            // Prefer cloud path; keep dataUrl only as local fallback
-            dataUrl: up.storagePath ? undefined : up.dataUrl ?? page.dataUrl,
+            dataUrl: up.storagePath ? undefined : up.dataUrl ?? row.page.dataUrl,
           });
         }
 
         update((t) => withTicketsAdded(t, created));
         setLabel("");
-        const assignedCount = created.filter((t) => t.personId).length;
+        const names = matched.map((m) => m.personName).join(", ");
         setMsg(
-          pages.length === 1
-            ? `Pass added${assignedPersonId ? "" : assignedCount ? " and matched to a traveller" : ""}.`
-            : `Split into ${pages.length} passes` +
-                (assignedCount
-                  ? ` — ${assignedCount} matched to travellers. Check assignments below.`
-                  : ". Assign each pass to a traveller below."),
+          matched.length === 1
+            ? `Pass added for ${names}.`
+            : `Added ${matched.length} passes from names on the tickets: ${names}.`,
         );
         return;
       }
 
+      // Photo / image upload
       const draft = createTicketMeta({
         label: baseLabel,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        personId: assignedPersonId || null,
+        personId: filterPersonId || null,
       });
       const up = await uploadTicketFile({
         client,
@@ -291,8 +293,8 @@ export function WalletPage() {
       );
       setLabel("");
       const who =
-        assignedPersonId
-          ? trip.people.find((p) => p.id === assignedPersonId)?.name.trim() ||
+        filterPersonId
+          ? trip.people.find((p) => p.id === filterPersonId)?.name.trim() ||
             "traveller"
           : "everyone";
       setMsg(
@@ -305,94 +307,6 @@ export function WalletPage() {
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
-    }
-  }
-
-  async function splitExistingPdf(ticket: TicketPass) {
-    if (!canEditTrip || !trip || !isPdfTicket(ticket)) return;
-    setBusy(true);
-    setMsg("Splitting boarding pass pages…");
-    try {
-      const client = configured && user ? createClient() : null;
-      const res = await resolveTicketUrl({ client, ticket });
-      if (res.error || !res.url) {
-        setMsg(res.error || "Could not open pass.");
-        return;
-      }
-      const fetched = await fetch(res.url);
-      if (!fetched.ok) {
-        setMsg("Could not download the PDF to split.");
-        return;
-      }
-      const blob = await fetched.blob();
-      const file = new File([blob], ticket.fileName || "boarding-pass.pdf", {
-        type: "application/pdf",
-      });
-      const pages = await splitPdfFileToPages(file);
-      if (pages.length <= 1) {
-        setMsg("This PDF is only one page — nothing to split.");
-        return;
-      }
-
-      const cloudTripId = meta?.tripId ?? null;
-      const used = new Set<string>();
-      const created: TicketPass[] = [];
-      const baseLabel = ticket.label.replace(/\s*\(\d+\/\d+\)\s*$/, "").trim();
-
-      for (const page of pages) {
-        let pagePersonId = matchPersonFromPassText(page.text, trip.people, used);
-        if (pagePersonId) used.add(pagePersonId);
-        if (
-          !pagePersonId &&
-          pages.length === trip.people.length &&
-          trip.people[page.page - 1]
-        ) {
-          const candidate = trip.people[page.page - 1]!.id;
-          if (!used.has(candidate)) {
-            pagePersonId = candidate;
-            used.add(candidate);
-          }
-        }
-        const personName = pagePersonId
-          ? trip.people.find((p) => p.id === pagePersonId)?.name.trim()
-          : null;
-        const draft = createTicketMeta({
-          label: personName
-            ? `${baseLabel} — ${personName}`
-            : `${baseLabel} (${page.page}/${pages.length})`,
-          fileName: page.file.name,
-          mimeType: "image/jpeg",
-          personId: pagePersonId,
-        });
-        const up = await uploadTicketFile({
-          client,
-          cloudTripId,
-          ticketId: draft.id,
-          file: page.file,
-        });
-        if (up.error) {
-          setMsg(up.error);
-          return;
-        }
-        created.push({
-          ...draft,
-          storagePath: up.storagePath,
-          dataUrl: up.storagePath ? undefined : up.dataUrl ?? page.dataUrl,
-        });
-      }
-
-      await deleteTicketFile({ client, ticket });
-      update((t) => {
-        const without = withTicketRemoved(t, ticket.id);
-        return withTicketsAdded(without, created);
-      });
-      setMsg(
-        `Split into ${created.length} passes. Assign anyone still on Everyone below.`,
-      );
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Could not split PDF.");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -411,6 +325,10 @@ export function WalletPage() {
 
   if (!trip) return null;
 
+  const filterName = personId
+    ? trip.people.find((p) => p.id === personId)?.name.trim()
+    : null;
+
   return (
     <>
       <PageHeader title="Wallet" />
@@ -420,8 +338,9 @@ export function WalletPage() {
         </ViewOnlyBanner>
       ) : (
         <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Upload boarding passes. A multi-page PDF is split into one pass per page so each
-          traveller can open only theirs.
+          Upload a group boarding-pass PDF with <strong>All travellers</strong> selected — we
+          match each page to names like Elena Morosanu. Tap a name to see only that person’s
+          passes.
         </p>
       )}
 
@@ -440,21 +359,22 @@ export function WalletPage() {
             />
           </label>
           <div className="field">
-            <span>Who is this for?</span>
+            <span>Show / match traveller</span>
             <PersonAssignPicker
               people={trip.people}
               value={personId}
               disabled={busy}
               onChange={setAssignPerson}
+              everyoneLabel="All travellers"
             />
             <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
-              Leave as Everyone for a group PDF — we’ll try to match each page to a name.
-              Or pick one person for a single pass.
+              All travellers: auto-split the PDF by names printed on each pass. A single name:
+              only keep that person’s pass from the PDF (and filter the list).
             </p>
             {trip.people.length === 0 ? (
               <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
-                No travellers yet — <Link href="/travellers">add people in Pack</Link> to assign
-                a pass to someone.
+                No travellers yet — <Link href="/travellers">add people in Pack</Link> using the
+                same names as on the boarding passes.
               </p>
             ) : null}
           </div>
@@ -493,11 +413,19 @@ export function WalletPage() {
 
       {msg ? <p className="estimate-msg">{msg}</p> : null}
 
+      {canEditTrip && filterName ? (
+        <p className="muted" style={{ margin: "0 0 0.75rem" }}>
+          Showing passes for <strong>{filterName}</strong> only.
+        </p>
+      ) : null}
+
       {visible.length === 0 ? (
         <section className="panel">
           <p className="muted" style={{ margin: 0 }}>
             {canEditTrip
-              ? "No passes yet — upload a boarding pass PDF or a clear photo of the QR code."
+              ? filterName
+                ? `No passes for ${filterName} yet — upload a PDF with All travellers, or assign one below.`
+                : "No passes yet — upload a boarding pass PDF or a clear photo of the QR code."
               : "No passes shared with you yet. Ask the trip organiser to upload them."}
           </p>
         </section>
@@ -535,16 +463,6 @@ export function WalletPage() {
                         )
                       }
                     />
-                    {isPdfTicket(ticket) ? (
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        disabled={busy}
-                        onClick={() => void splitExistingPdf(ticket)}
-                      >
-                        Split pages
-                      </button>
-                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost"

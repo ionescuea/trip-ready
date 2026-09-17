@@ -1,4 +1,5 @@
 import type { TicketPass, Trip } from "@/lib/types";
+import { nameTokens, normalizeName } from "@/lib/names";
 
 function newId() {
   return `tkt_${Math.random().toString(36).slice(2, 10)}`;
@@ -8,20 +9,28 @@ export function ticketsOf(trip: Trip): TicketPass[] {
   return trip.tickets ?? [];
 }
 
-/** Tickets visible to a traveller (or all if owner / no person filter). */
+/**
+ * Tickets visible to the current viewer.
+ * - Owners: all (optionally filtered by filterPersonId)
+ * - Travellers: only passes assigned to them (not “Everyone”)
+ */
 export function ticketsForViewer(
   trip: Trip,
-  opts: { personId?: string | null; isOwner: boolean },
+  opts: {
+    personId?: string | null;
+    isOwner: boolean;
+    /** Owner list filter — empty = show all */
+    filterPersonId?: string | null;
+  },
 ): TicketPass[] {
   const all = ticketsOf(trip);
-  // Owners always see every pass. Travellers without a linked profile also see all
-  // (so they aren’t locked out before Account → “I am”).
-  if (opts.isOwner || !opts.personId) return all;
-  return all.filter((t) => {
-    const assigned = t.personId?.trim();
-    if (!assigned) return true; // Everyone
-    return assigned === opts.personId;
-  });
+  if (opts.isOwner) {
+    const filter = opts.filterPersonId?.trim();
+    if (!filter) return all;
+    return all.filter((t) => t.personId === filter);
+  }
+  if (!opts.personId) return all;
+  return all.filter((t) => t.personId === opts.personId);
 }
 
 export function ticketPersonLabel(trip: Trip, ticket: TicketPass): string {
@@ -81,33 +90,120 @@ export function createTicketMeta(opts: {
   };
 }
 
-/** Match boarding-pass page text to a roster person (unique best match). */
+/**
+ * How strongly a boarding-pass page’s text matches a traveller name.
+ * Prefers full name / surname+given (e.g. Elena Morosanu), not first name alone.
+ */
+export function scorePersonInPassText(pageText: string, personName: string): number {
+  const hay = normalizeName(pageText).replace(/[^a-z0-9\s]/g, " ");
+  const name = normalizeName(personName);
+  if (!hay.trim() || !name) return 0;
+
+  if (hay.includes(name)) return 100;
+
+  // Airline layouts often use SURNAME/GIVEN or GIVEN/SURNAME without spaces
+  const compactHay = hay.replace(/\s+/g, "");
+  const compactName = name.replace(/\s+/g, "");
+  if (compactName.length > 3 && compactHay.includes(compactName)) return 95;
+
+  const tokens = nameTokens(personName).filter((t) => t.length > 1);
+  if (!tokens.length) return 0;
+
+  const hits = tokens.filter((t) => hay.includes(t) || compactHay.includes(t));
+  if (hits.length === tokens.length) return 85;
+
+  const surname = tokens[tokens.length - 1]!;
+  const given = tokens.slice(0, -1);
+  const surnameHit = hay.includes(surname) || compactHay.includes(surname);
+  const givenHits = given.filter((t) => hay.includes(t) || compactHay.includes(t));
+
+  if (surnameHit && givenHits.length > 0) return 75;
+  // Surname + first initial: MOROSANU/E
+  if (
+    surnameHit &&
+    given[0] &&
+    (hay.includes(`${surname} ${given[0][0]}`) ||
+      compactHay.includes(`${surname}${given[0][0]}`))
+  ) {
+    return 65;
+  }
+  return 0;
+}
+
+const MATCH_THRESHOLD = 65;
+
+/** Best unique traveller match for one page of pass text. */
 export function matchPersonFromPassText(
   pageText: string,
   people: { id: string; name: string }[],
-  alreadyUsed: Set<string>,
+  alreadyUsed: Set<string> = new Set(),
 ): string | null {
-  const hay = pageText.toLowerCase();
-  if (!hay.trim() || people.length === 0) return null;
+  const scored = people
+    .filter((p) => !alreadyUsed.has(p.id) && p.name.trim())
+    .map((p) => ({
+      id: p.id,
+      score: scorePersonInPassText(pageText, p.name),
+    }))
+    .filter((s) => s.score >= MATCH_THRESHOLD)
+    .sort((a, b) => b.score - a.score);
 
-  const scored: { id: string; score: number }[] = [];
-  for (const p of people) {
-    if (alreadyUsed.has(p.id)) continue;
-    const name = p.name.trim();
-    if (!name) continue;
-    const norm = name.toLowerCase();
-    let score = 0;
-    if (hay.includes(norm)) score += 10;
-    const parts = norm.split(/[\s\-]+/).filter((t) => t.length > 2);
-    for (const part of parts) {
-      if (hay.includes(part)) score += 3;
-    }
-    if (score > 0) scored.push({ id: p.id, score });
-  }
-  scored.sort((a, b) => b.score - a.score);
   if (scored.length === 0) return null;
   if (scored.length > 1 && scored[0]!.score === scored[1]!.score) return null;
   return scored[0]!.id;
+}
+
+export type PageForAssign = {
+  page: number;
+  text: string;
+  file: File;
+  dataUrl: string;
+};
+
+/**
+ * Assign each PDF page to at most one traveller by the name printed on that page.
+ * Unmatched pages are omitted (never guessed by roster order).
+ */
+export function assignPassPagesByName(
+  pages: PageForAssign[],
+  people: { id: string; name: string }[],
+  opts?: { onlyPersonId?: string | null },
+): { personId: string; personName: string; page: PageForAssign }[] {
+  const pool = opts?.onlyPersonId
+    ? people.filter((p) => p.id === opts.onlyPersonId)
+    : people;
+
+  const byPage: { personId: string; score: number; page: PageForAssign }[] = [];
+
+  for (const page of pages) {
+    let best: { personId: string; score: number } | null = null;
+    for (const person of pool) {
+      const score = scorePersonInPassText(page.text, person.name);
+      if (score < MATCH_THRESHOLD) continue;
+      if (!best || score > best.score) {
+        best = { personId: person.id, score };
+      }
+    }
+    if (best) {
+      byPage.push({ ...best, page });
+    }
+  }
+
+  // One pass per person — keep the highest-scoring page if several match
+  const bestPerPerson = new Map<
+    string,
+    { personId: string; score: number; page: PageForAssign }
+  >();
+  for (const row of byPage) {
+    const prev = bestPerPerson.get(row.personId);
+    if (!prev || row.score > prev.score) bestPerPerson.set(row.personId, row);
+  }
+
+  return [...bestPerPerson.values()].map((row) => ({
+    personId: row.personId,
+    personName:
+      people.find((p) => p.id === row.personId)?.name.trim() || "Traveller",
+    page: row.page,
+  }));
 }
 
 export function withTicketsAdded(trip: Trip, tickets: TicketPass[]): Trip {
