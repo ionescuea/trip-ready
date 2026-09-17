@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddressField } from "@/components/AddressField";
 import { usePermissions } from "@/hooks/usePermissions";
+import { softNormalizeUkAddress } from "@/lib/addressFormat";
 import { getTripAirportLabel } from "@/lib/airports";
 import {
   driverFirstName,
@@ -269,7 +270,9 @@ export function LeaveByPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fromTown: trip.fromTown,
-          homeAddress: trip.homePostcode?.trim() || undefined,
+          homeAddress: softNormalizeUkAddress(
+            trip.homePostcode?.trim() || "",
+          ) || undefined,
           toTown: toTownValue || undefined,
           parkingName: parking?.name,
           parkingAirport: parking?.airport || undefined,
@@ -342,6 +345,13 @@ export function LeaveByPanel({
 
   useEffect(() => {
     if (readOnly) return;
+    const start = trip.homePostcode?.trim() || "";
+    // Don't hammer the map while the address is still being typed / jammed
+    const startLooksReady =
+      /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(start) ||
+      (start.length >= 12 && /\s/.test(start));
+    if (!startLooksReady) return;
+
     const staleNightPad =
       plan.nightDrive &&
       typeof trip.driveMinutes === "number" &&
@@ -358,11 +368,14 @@ export function LeaveByPanel({
     if (!needsEstimate || estimating) return;
     if (!routeChanged && autoTried.current) return;
 
-    autoTried.current = true;
-    routeKeyRef.current = routeFingerprint;
-    void estimateDrive();
+    const t = setTimeout(() => {
+      autoTried.current = true;
+      routeKeyRef.current = routeFingerprint;
+      void estimateDrive();
+    }, 1200);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeFingerprint, originReady, toTownValue, plan.nightDrive]);
+  }, [routeFingerprint, originReady, toTownValue, plan.nightDrive, readOnly, trip.homePostcode]);
 
   const mappedStops = useMemo(
     () =>

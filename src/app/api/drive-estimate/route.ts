@@ -39,7 +39,13 @@ function addressQueryCandidates(place: string): string[] {
   const raw = place.trim();
   if (!raw) return [];
 
-  const noCountry = raw
+  // Soft-normalize jammed postcodes (PL21QG → PL2 1QG)
+  const spaced = raw
+    .replace(/\s+/g, " ")
+    .replace(/\b([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})\b/gi, "$1 $2")
+    .trim();
+
+  const noCountry = spaced
     .replace(/\bUnited Kingdom\b/gi, "")
     .replace(/\bUK\b/gi, "")
     .replace(/,\s*,+/g, ",")
@@ -47,10 +53,13 @@ function addressQueryCandidates(place: string): string[] {
     .replace(/\s+/g, " ")
     .trim();
 
-  const postcode = extractUkPostcode(raw);
+  const postcode = extractUkPostcode(spaced) || extractUkPostcode(raw);
   const candidates: string[] = [];
 
-  if (postcode) candidates.push(postcode);
+  if (postcode) {
+    candidates.push(postcode);
+    candidates.push(`${postcode}, United Kingdom`);
+  }
   if (noCountry) candidates.push(noCountry);
   if (noCountry && !/united kingdom/i.test(noCountry)) {
     candidates.push(`${noCountry}, United Kingdom`);
@@ -67,6 +76,7 @@ function addressQueryCandidates(place: string): string[] {
       candidates.push(`${withoutPc}, United Kingdom`);
     }
   }
+  candidates.push(spaced);
   candidates.push(raw);
 
   return [...new Set(candidates.filter(Boolean))];
