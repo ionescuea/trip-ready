@@ -230,6 +230,8 @@ export function LeaveByPanel({
       .map((s) => `${s.id}:${resolveStopAddress(trip, s)}`)
       .join("|");
     return [
+      // Bump when geocoder/routing changes so saved long legs re-estimate once
+      "drv-v3",
       trip.homePostcode?.trim() ?? "",
       trip.fromTown?.trim() ?? "",
       toTownValue,
@@ -375,10 +377,11 @@ export function LeaveByPanel({
       trip.driveMinutes > 150;
     const routeChanged = routeKeyRef.current !== routeFingerprint;
     if (routeChanged) absurdRetried.current = false;
-    // Inflated totals (e.g. bad postcode-only geocode) — one fresh map pass
+    const maxLeg = Math.max(0, ...(trip.driveLegs ?? []).map((l) => l.minutes || 0));
+    // Inflated totals / single runaway leg — one fresh map pass
     const absurdDrive =
-      typeof trip.driveMinutes === "number" &&
-      trip.driveMinutes > 280 &&
+      ((typeof trip.driveMinutes === "number" && trip.driveMinutes > 220) ||
+        maxLeg > 160) &&
       !absurdRetried.current;
     const needsEstimate =
       originReady &&

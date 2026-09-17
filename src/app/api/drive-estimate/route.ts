@@ -138,12 +138,47 @@ async function geocode(query: string): Promise<NominatimResult | null> {
   return data[0] ?? null;
 }
 
-async function geocodeBest(place: string): Promise<NominatimResult | null> {
+/** Try several query shapes; keep distinct lat/lon hits. */
+async function geocodeCandidates(
+  place: string,
+  maxHits = 4,
+): Promise<NominatimResult[]> {
+  const hits: NominatimResult[] = [];
+  const seen = new Set<string>();
   for (const q of addressQueryCandidates(place)) {
     const hit = await geocode(q);
-    if (hit) return hit;
+    if (!hit) continue;
+    const key = `${Number(hit.lat).toFixed(5)},${Number(hit.lon).toFixed(5)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push(hit);
+    if (hits.length >= maxHits) break;
   }
-  return null;
+  return hits;
+}
+
+function pickNearestGeo(
+  hits: NominatimResult[],
+  near?: { lat: number; lon: number },
+): NominatimResult | null {
+  if (hits.length === 0) return null;
+  if (!near) return hits[0];
+  return [...hits].sort(
+    (a, b) =>
+      haversineKm(near, parseGeo(a)) - haversineKm(near, parseGeo(b)),
+  )[0];
+}
+
+/**
+ * Resolve an address. When `near` is set (home / previous stop), prefer the
+ * candidate closest to that point so a bare postcode in the wrong town can’t
+ * yank a pick-up 4 hours away overnight.
+ */
+async function geocodeBest(
+  place: string,
+  near?: { lat: number; lon: number },
+): Promise<NominatimResult | null> {
+  return pickNearestGeo(await geocodeCandidates(place), near);
 }
 
 function toRad(deg: number): number {
@@ -361,8 +396,16 @@ export async function POST(request: Request) {
       label: homeAddress ? "Home" : fromTown || "Start",
     };
 
+    // Bias home geocode toward the trip’s from-town when both are set
+    let originBias: { lat: number; lon: number } | undefined;
+    if (homeAddress && fromTown) {
+      const townHits = await geocodeCandidates(`${fromTown}, United Kingdom`, 2);
+      const town = pickNearestGeo(townHits);
+      if (town) originBias = parseGeo(town);
+    }
+
     // Geocode home + stops first so we can order nearest-to-home, then route.
-    const originGeo = await geocodeBest(originRaw);
+    const originGeo = await geocodeBest(originRaw, originBias);
     if (!originGeo) {
       return NextResponse.json(
         {
@@ -381,7 +424,7 @@ export async function POST(request: Request) {
       distanceFromHomeKm: number;
     }[] = [];
     for (const w of stopWaypoints) {
-      const geo = await geocodeBest(w.address);
+      const geo = await geocodeBest(w.address, originCoords);
       if (!geo) {
         return NextResponse.json(
           {
@@ -411,6 +454,10 @@ export async function POST(request: Request) {
     }));
 
     const destLabel = body.parkingName?.trim() || toTown || "Parking";
+    const routeAnchor =
+      midPoints.length > 0
+        ? parseGeo(midPoints[midPoints.length - 1].geo)
+        : originCoords;
 
     const googleKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
     if (googleKey) {
@@ -449,12 +496,19 @@ export async function POST(request: Request) {
 
     let destGeo: NominatimResult | null = null;
     let usedQuery = destQueries[0];
+    const destHits: { q: string; geo: NominatimResult }[] = [];
     for (const q of destQueries) {
-      destGeo = await geocode(q);
-      if (destGeo) {
-        usedQuery = q;
-        break;
-      }
+      const geo = await geocode(q);
+      if (geo) destHits.push({ q, geo });
+    }
+    if (destHits.length > 0) {
+      const best = [...destHits].sort(
+        (a, b) =>
+          haversineKm(routeAnchor, parseGeo(a.geo)) -
+          haversineKm(routeAnchor, parseGeo(b.geo)),
+      )[0];
+      destGeo = best.geo;
+      usedQuery = best.q;
     }
     if (!destGeo) {
       return NextResponse.json(
