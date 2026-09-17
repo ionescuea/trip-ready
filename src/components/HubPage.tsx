@@ -260,6 +260,10 @@ export function HubPage() {
         <p className="muted" style={{ marginTop: "0.65rem" }}>
           Syncing with cloud…
         </p>
+      ) : meta?.inviteCode && !cloudError ? (
+        <p className="muted" style={{ marginTop: "0.65rem" }}>
+          Trip saved in the cloud (code {meta.inviteCode}).
+        </p>
       ) : null}
       {cloudError ? (
         <p className="route-warn" style={{ marginTop: "0.65rem" }}>

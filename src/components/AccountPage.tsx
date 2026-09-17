@@ -199,6 +199,11 @@ export function AccountPage() {
             </div>
             {meta ? (
               <div className="cloud-meta">
+                <p className="estimate-msg" style={{ margin: "0 0 0.75rem" }}>
+                  Saved in Supabase — bookings and trip details stay available on any device
+                  when you sign in with this account (and for travellers who joined with the
+                  invite).
+                </p>
                 <div className="invite-code-block">
                   <span className="invite-code-label">Invite code</span>
                   <strong className="invite-code-value">{meta.inviteCode}</strong>
@@ -262,14 +267,20 @@ export function AccountPage() {
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy || !trip}
-                onClick={() => void enableCloud()}
-              >
-                {busy ? "Creating…" : "Upload this trip & get invite code"}
-              </button>
+              <>
+                <p className="muted" style={{ margin: "0 0 0.85rem" }}>
+                  Right now this trip only lives in this browser. Upload it to the cloud so
+                  bookings and details aren’t lost if you clear site data or switch phones.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy || !trip}
+                  onClick={() => void enableCloud()}
+                >
+                  {busy ? "Creating…" : "Upload this trip & get invite code"}
+                </button>
+              </>
             )}
           </section>
 
