@@ -1517,35 +1517,12 @@ body {
   padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom));
 }
 
-/*
- * Must come AFTER .bottom-nav — earlier “bottom” overrides were winning and the
- * Netlify pill kept covering Leave by / Pack on phones.
- */
 @media (max-width: 900px) {
-  :root {
-    --netlify-badge-clearance: 3.75rem;
-  }
-
-  .shell {
-    padding-bottom: calc(var(--nav-h) + var(--netlify-badge-clearance) + 1.5rem);
-  }
-
   .bottom-nav {
     left: 0;
     transform: none;
     width: 100%;
-    bottom: var(--netlify-badge-clearance);
-    z-index: 1000;
   }
-}
-
-/* Hide Netlify’s fixed “Powered by” control when present */
-iframe[src*="netlify"],
-iframe[src*="ntl.fyi"],
-a[href*="netlify.com"][style*="fixed"],
-div[id*="netlify-"][style*="fixed"] {
-  display: none !important;
-  pointer-events: none !important;
 }
 
 .nav-item {
