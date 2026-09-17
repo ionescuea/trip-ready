@@ -560,7 +560,13 @@ export function TripProvider({ children }: { children: ReactNode }) {
         };
 
         if (!res.ok || !data.results?.length) {
-          applyResults(text, sourceName, extractAllFromText(text), [
+          let local: ExtractResult[] = [];
+          try {
+            local = extractAllFromText(text);
+          } catch {
+            local = [];
+          }
+          applyResults(text, sourceName, local, [
             data.error || data.note || "Extract API unavailable — used local extractor.",
           ]);
           return;
@@ -570,7 +576,13 @@ export function TripProvider({ children }: { children: ReactNode }) {
           data.note || (data.source === "ai" ? "Extracted with AI." : "Used local extractor."),
         ]);
       } catch {
-        applyResults(text, sourceName, extractAllFromText(text), [
+        let local: ExtractResult[] = [];
+        try {
+          local = extractAllFromText(text);
+        } catch {
+          local = [];
+        }
+        applyResults(text, sourceName, local, [
           "Network error — used local extractor.",
         ]);
       } finally {

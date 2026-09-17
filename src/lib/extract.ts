@@ -27,6 +27,26 @@ function findMatch(text: string, patterns: RegExp[]): string | undefined {
   return undefined;
 }
 
+/** Safari-safe RegExp matchAll (avoids for-of on undefined). */
+function matchAllSafe(text: string, re: RegExp): RegExpExecArray[] {
+  if (typeof text.matchAll === "function") {
+    try {
+      return Array.from(text.matchAll(re));
+    } catch {
+      /* fall through */
+    }
+  }
+  const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+  const r = new RegExp(re.source, flags);
+  const out: RegExpExecArray[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = r.exec(text)) !== null) {
+    out.push(m);
+    if (!r.global) break;
+  }
+  return out;
+}
+
 function findAllNames(text: string): string[] {
   const patterns = [
     /(?:passengers?|travellers?|travelers?|guests?|lead passenger|party)\s*[:\-]\s*([^\n]{3,200})/i,
@@ -115,12 +135,11 @@ function findBookingNumber(text: string): string | undefined {
 }
 
 function findPassengerTitles(text: string): string[] {
-  const names = [
-    ...text.matchAll(
-      /\b(?:Mrs?|Ms|Miss|Dr)\.?\s+([A-Z][a-zA-Z' -]+?)(?=\s*(?:Small under seat|Adult|Child|\n|$))/g,
-    ),
-  ]
-    .map((m) => m[1].trim())
+  const names = matchAllSafe(
+    text,
+    /\b(?:Mrs?|Ms|Miss|Dr)\.?\s+([A-Z][a-zA-Z' -]+?)(?=\s*(?:Small under seat|Adult|Child|\n|$))/g,
+  )
+    .map((m) => (m[1] ?? "").trim())
     .filter((n) => n.length > 2 && n.length < 60 && !/cabin|bag|hold/i.test(n));
   return [...new Set(names)];
 }
@@ -142,7 +161,7 @@ function parseEasyJetFlightLegs(text: string): FlightLeg[] {
     /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+(\d{4})\s+(\d{1,2}:\d{2})\s+(\d{1,2}:\d{2})\s+([A-Za-z][A-Za-z ]*?)\(\s*([A-Z]{3})\s*\)\s+([A-Za-z][A-Za-z ]*?)\(\s*([A-Z]{3})\s*\)/gi;
 
   const legs: FlightLeg[] = [];
-  for (const m of flat.replace(/\n+/g, " ").matchAll(re)) {
+  for (const m of matchAllSafe(flat.replace(/\n+/g, " "), re)) {
     const parsed = parseFlexibleDate(`${m[1]} ${m[2]} ${m[3]}`);
     legs.push({
       date: parsed ? formatDateDMY(parsed) : `${m[1]} ${m[2]} ${m[3]}`,

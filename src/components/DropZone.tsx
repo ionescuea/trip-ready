@@ -105,7 +105,16 @@ export function DropZone({ onText, busy = false }: Props) {
         onClick={() => {
           const value = paste;
           setPaste("");
-          void onText(value, "pasted-email.txt");
+          setError(null);
+          void (async () => {
+            try {
+              await onText(value, "pasted-email.txt");
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : "Could not extract that text.",
+              );
+            }
+          })();
         }}
       >
         {busy ? "Extracting…" : "Extract from paste"}

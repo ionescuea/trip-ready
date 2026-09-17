@@ -10,10 +10,23 @@ type TextItem = {
 };
 
 /** Rebuild PDF text using positions so dates/labels stay readable. */
-function pageItemsToText(items: TextItem[]): string {
+function pageItemsToText(items: TextItem[] | null | undefined): string {
+  let list: TextItem[] = [];
+  if (Array.isArray(items)) {
+    list = items;
+  } else if (items && typeof (items as Iterable<TextItem>)[Symbol.iterator] === "function") {
+    try {
+      list = Array.from(items as Iterable<TextItem>);
+    } catch {
+      list = [];
+    }
+  }
+  if (!list.length) return "";
+
   const rows: { y: number; parts: { x: number; text: string }[] }[] = [];
 
-  for (const item of items) {
+  for (const item of list) {
+    if (!item) continue;
     const str = item.str ?? "";
     if (!str) continue;
     const transform = item.transform ?? [1, 0, 0, 1, 0, 0];
@@ -100,7 +113,9 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-    const pageText = pageItemsToText(content.items as TextItem[]);
+    const pageText = pageItemsToText(
+      (content as { items?: TextItem[] }).items,
+    );
     if (pageText.trim()) pages.push(pageText.trim());
   }
 
@@ -204,7 +219,8 @@ export async function splitPdfFileToPages(
     let text = "";
     try {
       const content = await page.getTextContent();
-      text = pageItemsToText(content.items as TextItem[]);
+      const rawItems = (content as { items?: TextItem[] }).items;
+      text = pageItemsToText(rawItems);
     } catch {
       text = "";
     }
