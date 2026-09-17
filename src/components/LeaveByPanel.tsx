@@ -323,12 +323,11 @@ export function LeaveByPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fromTown:
-            (isUsableUkTownName(trip.fromTown)
-              ? trip.fromTown.trim()
-              : undefined) ||
-            townFromUkAddress(trip.homePostcode ?? "") ||
-            undefined,
+          fromTown: (() => {
+            const town = trip.fromTown?.trim();
+            if (town && isUsableUkTownName(town)) return town;
+            return townFromUkAddress(trip.homePostcode ?? "") || undefined;
+          })(),
           homeAddress:
             softNormalizeUkAddress(getDriverStartAddress(trip)) || undefined,
           toTown: toTownValue || undefined,
