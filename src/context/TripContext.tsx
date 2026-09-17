@@ -567,13 +567,18 @@ export function TripProvider({ children }: { children: ReactNode }) {
             local = [];
           }
           applyResults(text, sourceName, local, [
-            data.error || data.note || "Extract API unavailable — used local extractor.",
+            data.error ||
+              data.note ||
+              "Extract API unavailable — used the built-in reader.",
           ]);
           return;
         }
 
         applyResults(text, sourceName, data.results, [
-          data.note || (data.source === "ai" ? "Extracted with AI." : "Used local extractor."),
+          data.note ||
+            (data.source === "ai"
+              ? "Extracted with AI."
+              : "Extracted with the built-in reader."),
         ]);
       } catch {
         let local: ExtractResult[] = [];
@@ -583,7 +588,9 @@ export function TripProvider({ children }: { children: ReactNode }) {
           local = [];
         }
         applyResults(text, sourceName, local, [
-          "Network error — used local extractor.",
+          local.length
+            ? "Offline — extracted with the built-in reader."
+            : "Could not extract that confirmation. Try pasting the full email text.",
         ]);
       } finally {
         setExtracting(false);

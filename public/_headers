@@ -1,0 +1,4 @@
+# Netlify static headers (also picked up from public/ on many setups)
+/pdf.worker.min.mjs
+  Content-Type: application/javascript; charset=utf-8
+  Cache-Control: public, max-age=604800

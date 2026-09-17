@@ -69,8 +69,9 @@ function pageItemsToText(items: TextItem[] | null | undefined): string {
 
 async function configurePdfWorker() {
   const pdfjs = await import("pdfjs-dist");
-  // Same-origin file in /public — import.meta worker URLs often fail on iOS/Samsung.
-  pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+  // CDN first — /pdf.worker.min.mjs 404s on some Netlify/Next setups and breaks mobile Chrome.
+  const cdn = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = cdn;
   return pdfjs;
 }
 

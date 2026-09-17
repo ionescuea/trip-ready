@@ -4,12 +4,14 @@ import { extractAllFromText } from "@/lib/extract";
 
 export const runtime = "nodejs";
 
-function heuristic(text: string) {
+function heuristic(text: string, note?: string) {
   const results = extractAllFromText(text);
   return NextResponse.json({
     source: "heuristic",
     results,
-    note: "No AI key configured — used local extractor. Add OPENAI_API_KEY to .env.local for broader booking formats.",
+    note:
+      note ||
+      "Extracted with the built-in reader. Add OPENAI_API_KEY on Netlify for AI extract.",
   });
 }
 
@@ -54,12 +56,10 @@ export async function POST(request: Request) {
     if (!aiRes.ok) {
       const errText = await aiRes.text();
       console.error("OpenAI extract failed:", aiRes.status, errText.slice(0, 500));
-      const fallback = extractAllFromText(clipped);
-      return NextResponse.json({
-        source: "heuristic",
-        results: fallback,
-        note: "AI extract failed — used local extractor fallback.",
-      });
+      return heuristic(
+        clipped,
+        `Extracted with the built-in reader (AI returned ${aiRes.status}).`,
+      );
     }
 
     const data = (await aiRes.json()) as {
@@ -67,24 +67,19 @@ export async function POST(request: Request) {
     };
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
-      return heuristic(clipped);
+      return heuristic(clipped, "Extracted with the built-in reader (empty AI response).");
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(content);
     } catch {
-      const fallback = extractAllFromText(clipped);
-      return NextResponse.json({
-        source: "heuristic",
-        results: fallback,
-        note: "AI returned invalid JSON — used local extractor fallback.",
-      });
+      return heuristic(clipped, "Extracted with the built-in reader (AI JSON invalid).");
     }
 
     const results = normalizeAiBookings(parsed);
     if (results.length === 0) {
-      return heuristic(clipped);
+      return heuristic(clipped, "Extracted with the built-in reader (AI found no bookings).");
     }
 
     return NextResponse.json({
