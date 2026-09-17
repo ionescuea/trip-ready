@@ -91,9 +91,9 @@ function reorderStopsByWaypointOrder(
   for (const s of stops) {
     if (!used.has(s.id)) next.push(s);
   }
-  // First pick-up in map order: no dwell at the stop
-  return next.map((s, i) =>
-    s.personId ? { ...s, minutes: i === 0 ? 0 : s.minutes || 5 } : s,
+  // Traveller pick-ups: 5 min at each stop (included in leave-home total)
+  return next.map((s) =>
+    s.personId ? { ...s, minutes: s.minutes > 0 ? s.minutes : 5 } : s,
   );
 }
 
@@ -525,7 +525,7 @@ export function LeaveByPanel({
           })()}
           {plan.parkingToAirportWindowMinutes > 0 ? (
             <span className="milestone-note">
-              Not earlier, not later · {plan.parkingToAirportWindowMinutes} min buffer
+              Not earlier, not later · {formatDuration(plan.parkingToAirportWindowMinutes)} buffer
             </span>
           ) : null}
         </li>
@@ -607,12 +607,15 @@ export function LeaveByPanel({
             <ul className="pickup-summary-list">
               {personPickups.map((stop) => {
                 const person = trip.people.find((p) => p.id === stop.personId);
+                const dwell = stop.minutes > 0 ? stop.minutes : 5;
                 return (
                   <li key={stop.id}>
                     <div>
                       <strong>{person?.name ?? stop.label}</strong>
                       <span className="muted">
                         {resolveStopAddress(trip, stop) || "Address missing"}
+                        {" · "}
+                        {formatDuration(dwell)} at stop
                       </span>
                     </div>
                     {stop.personId ? (

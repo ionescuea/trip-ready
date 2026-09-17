@@ -39,24 +39,22 @@ export function reconcilePickupStops(trip: Trip): Trip {
   }
 
   // Append newly addressed passengers (not yet on the route)
-  let nextIndex = kept.length;
   for (const person of passengers) {
     if (seen.has(person.id)) continue;
     kept.push({
       id: newStopId(),
       label: `Pick up ${firstName(person.name)}`,
-      minutes: nextIndex === 0 ? 0 : 5,
+      minutes: 5,
       personId: person.id,
       address: person.address!.trim(),
     });
     seen.add(person.id);
-    nextIndex += 1;
   }
 
-  // First pick-up on the ordered route: no dwell
-  const pickupStops = kept.map((stop, i) => ({
+  // Traveller pick-ups always carry a 5 min dwell (included in leave-by total)
+  const pickupStops = kept.map((stop) => ({
     ...stop,
-    minutes: i === 0 ? 0 : stop.minutes > 0 ? stop.minutes : 5,
+    minutes: stop.minutes > 0 ? stop.minutes : 5,
   }));
 
   const nextStops = [...pickupStops, ...customStops];

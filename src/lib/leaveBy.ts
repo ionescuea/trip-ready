@@ -270,9 +270,16 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
     return ordered.length > 0 ? [...ordered, ...remaining] : routedStopsRaw;
   })();
 
-  // First pick-up: no dwell — be ready when the car arrives / when you leave.
-  const dwellAtRoutedStop = (index: number, stop: { minutes: number }) =>
-    index === 0 ? 0 : roundUpMinutes(stop.minutes);
+  // Every traveller pick-up gets dwell time (default 5 min) in the leave-home total.
+  const dwellAtRoutedStop = (
+    _index: number,
+    stop: { minutes: number; personId?: string },
+  ) => {
+    if (stop.personId) {
+      return roundUpMinutes(stop.minutes > 0 ? stop.minutes : 5);
+    }
+    return roundUpMinutes(stop.minutes);
+  };
 
   const extraStopMinutes =
     routedStops.reduce((sum, s, i) => sum + dwellAtRoutedStop(i, s), 0) +
@@ -444,7 +451,7 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
   }
   if (extraStopMinutes > 0) {
     notes.push(
-      `Stop dwell time adds ${formatDuration(extraStopMinutes)} (petrol fill-up, waiting). Road detours are in the mapped drive.`,
+      `Pick-up / stop time adds ${formatDuration(extraStopMinutes)} (5 min per traveller pick-up by default). Road time between stops is in the mapped drive.`,
     );
   }
   const unmappedStops = allExtraStops.filter((s) => {
