@@ -19,51 +19,47 @@ import {
   createTicketMeta,
   isImageTicket,
   isPdfTicket,
-  ticketPersonLabel,
   ticketsForViewer,
+  ticketsOf,
   withTicketAdded,
   withTicketRemoved,
   withTicketsAdded,
-  withTicketUpdated,
+  withTicketsCleared,
 } from "@/lib/tickets";
 import type { Person, TicketPass } from "@/lib/types";
 
-const WALLET_ASSIGN_KEY = "trip-ready-wallet-assign-person";
+const WALLET_FILTER_KEY = "trip-ready-wallet-filter-person";
 
-function PersonAssignPicker({
+function PersonFilterPicker({
   people,
   value,
+  counts,
   disabled,
   onChange,
-  everyoneLabel = "Everyone",
 }: {
   people: Person[];
   value: string;
+  counts: Record<string, number>;
   disabled?: boolean;
   onChange: (personId: string) => void;
-  everyoneLabel?: string;
 }) {
   return (
     <div className="wallet-person-picker" role="group" aria-label="Traveller">
-      <button
-        type="button"
-        className={`wallet-person-chip${value === "" ? " active" : ""}`}
-        disabled={disabled}
-        onClick={() => onChange("")}
-      >
-        {everyoneLabel}
-      </button>
-      {people.map((p) => (
-        <button
-          type="button"
-          key={p.id}
-          className={`wallet-person-chip${value === p.id ? " active" : ""}`}
-          disabled={disabled}
-          onClick={() => onChange(p.id)}
-        >
-          {p.name.trim() || "Traveller"}
-        </button>
-      ))}
+      {people.map((p) => {
+        const n = counts[p.id] ?? 0;
+        return (
+          <button
+            type="button"
+            key={p.id}
+            className={`wallet-person-chip${value === p.id ? " active" : ""}`}
+            disabled={disabled}
+            onClick={() => onChange(p.id)}
+          >
+            {p.name.trim() || "Traveller"}
+            {n > 0 ? ` · ${n}` : ""}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -73,8 +69,7 @@ export function WalletPage() {
   const { meta, configured, user } = useCloud();
   const { canEditTrip, isTraveller, myPersonId } = usePermissions();
   const fileRef = useRef<HTMLInputElement>(null);
-  /** Survives iOS file-picker remounts better than state alone. */
-  const assignPersonRef = useRef("");
+  const filterPersonRef = useRef("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [personId, setPersonId] = useState("");
@@ -88,11 +83,21 @@ export function WalletPage() {
   const [pdfStatus, setPdfStatus] = useState<"idle" | "loading" | "error">("idle");
   const [pdfError, setPdfError] = useState<string | null>(null);
 
+  const setFilterPerson = useCallback((id: string) => {
+    filterPersonRef.current = id;
+    setPersonId(id);
+    try {
+      sessionStorage.setItem(WALLET_FILTER_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem(WALLET_ASSIGN_KEY);
-      if (saved != null) {
-        assignPersonRef.current = saved;
+      const saved = sessionStorage.getItem(WALLET_FILTER_KEY);
+      if (saved) {
+        filterPersonRef.current = saved;
         setPersonId(saved);
       }
     } catch {
@@ -100,24 +105,37 @@ export function WalletPage() {
     }
   }, []);
 
-  const setAssignPerson = useCallback((id: string) => {
-    assignPersonRef.current = id;
-    setPersonId(id);
-    try {
-      sessionStorage.setItem(WALLET_ASSIGN_KEY, id);
-    } catch {
-      /* ignore */
+  const passCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (!trip) return counts;
+    for (const t of ticketsOf(trip)) {
+      if (!t.personId) continue;
+      counts[t.personId] = (counts[t.personId] ?? 0) + 1;
     }
-  }, []);
+    return counts;
+  }, [trip]);
 
   const visible = useMemo(() => {
     if (!trip) return [];
+    if (canEditTrip) {
+      if (!personId) return [];
+      return ticketsOf(trip).filter((t) => t.personId === personId);
+    }
     return ticketsForViewer(trip, {
       personId: myPersonId,
-      isOwner: canEditTrip,
-      filterPersonId: canEditTrip ? personId : null,
+      isOwner: false,
     });
   }, [trip, myPersonId, canEditTrip, personId]);
+
+  useEffect(() => {
+    if (!trip || !canEditTrip || personId) return;
+    if (myPersonId && trip.people.some((p) => p.id === myPersonId)) {
+      setFilterPerson(myPersonId);
+      return;
+    }
+    const first = trip.people[0];
+    if (first) setFilterPerson(first.id);
+  }, [trip, canEditTrip, personId, myPersonId, setFilterPerson]);
 
   useEffect(() => {
     if (!viewer || viewer.kind !== "pdf") {
@@ -181,7 +199,7 @@ export function WalletPage() {
     if (!file || !trip || !canEditTrip) return;
     setBusy(true);
     setMsg(null);
-    const filterPersonId = assignPersonRef.current || personId || "";
+    const selectedPersonId = filterPersonRef.current || personId || "";
     const baseLabel = label.trim() || file.name.replace(/\.[^.]+$/, "");
     try {
       const client = configured && user ? createClient() : null;
@@ -190,50 +208,29 @@ export function WalletPage() {
         file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 
       if (isPdf) {
-        setMsg("Reading names on boarding passes…");
+        setMsg("Matching boarding passes to traveller names…");
         const pages = await splitPdfFileToPages(file);
-        const matched = assignPassPagesByName(pages, trip.people, {
-          onlyPersonId: filterPersonId || null,
-        });
+        const matched = assignPassPagesByName(pages, trip.people);
 
         if (matched.length === 0) {
-          // No name match — store as one pass for the selected person or Everyone
-          const draft = createTicketMeta({
-            label: baseLabel,
-            fileName: file.name,
-            mimeType: "application/pdf",
-            personId: filterPersonId || null,
-          });
-          const up = await uploadTicketFile({
-            client,
-            cloudTripId,
-            ticketId: draft.id,
-            file,
-          });
-          if (up.error) {
-            setMsg(up.error);
-            return;
-          }
-          update((t) =>
-            withTicketAdded(t, {
-              ...draft,
-              storagePath: up.storagePath,
-              dataUrl: up.dataUrl,
-            }),
-          );
-          setLabel("");
           setMsg(
-            filterPersonId
-              ? "Pass added. Couldn’t read a matching name on the PDF — assigned to the traveller you selected."
-              : "Pass added for Everyone. Couldn’t match roster names on the PDF — pick a traveller on the card, or check names in Pack match the pass.",
+            "Couldn’t match roster names on this PDF. In Pack, use the same names as on the passes (e.g. Elena Morosanu), then upload again.",
           );
           return;
         }
 
         const created: TicketPass[] = [];
+        const seq = new Map<string, number>();
         for (const row of matched) {
+          const n = (seq.get(row.personId) ?? 0) + 1;
+          seq.set(row.personId, n);
+          const pageLabel =
+            n === 1
+              ? `${baseLabel} — ${row.personName}`
+              : `${baseLabel} — ${row.personName} (${n})`;
+
           const draft = createTicketMeta({
-            label: `${baseLabel} — ${row.personName}`,
+            label: pageLabel,
             fileName: row.page.file.name,
             mimeType: "image/jpeg",
             personId: row.personId,
@@ -258,21 +255,27 @@ export function WalletPage() {
 
         update((t) => withTicketsAdded(t, created));
         setLabel("");
-        const names = matched.map((m) => m.personName).join(", ");
-        setMsg(
-          matched.length === 1
-            ? `Pass added for ${names}.`
-            : `Added ${matched.length} passes from names on the tickets: ${names}.`,
-        );
+        const summary = [...seq.entries()]
+          .map(([id, n]) => {
+            const name =
+              trip.people.find((p) => p.id === id)?.name.trim() || "Traveller";
+            return `${name} ×${n}`;
+          })
+          .join(", ");
+        setMsg(`Matched ${created.length} passes (${summary}).`);
+        if (matched[0]?.personId) setFilterPerson(matched[0].personId);
         return;
       }
 
-      // Photo / image upload
+      if (!selectedPersonId) {
+        setMsg("Select a traveller, then upload their pass photo.");
+        return;
+      }
       const draft = createTicketMeta({
         label: baseLabel,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        personId: filterPersonId || null,
+        personId: selectedPersonId,
       });
       const up = await uploadTicketFile({
         client,
@@ -293,15 +296,9 @@ export function WalletPage() {
       );
       setLabel("");
       const who =
-        filterPersonId
-          ? trip.people.find((p) => p.id === filterPersonId)?.name.trim() ||
-            "traveller"
-          : "everyone";
-      setMsg(
-        up.storagePath
-          ? `Pass added for ${who}.`
-          : `Pass saved on this device for ${who}. Upload the trip to the cloud so travellers can open it on their phones.`,
-      );
+        trip.people.find((p) => p.id === selectedPersonId)?.name.trim() ||
+        "traveller";
+      setMsg(`Pass added for ${who}.`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Upload failed.");
     } finally {
@@ -323,11 +320,36 @@ export function WalletPage() {
     }
   }
 
+  async function clearAllPasses() {
+    if (!canEditTrip || !trip) return;
+    const n = ticketsOf(trip).length;
+    if (!n) return;
+    if (
+      !confirm(
+        `Remove all ${n} wallet passes? Upload the boarding-pass PDF again to rematch by name.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const client = configured && user ? createClient() : null;
+      for (const ticket of ticketsOf(trip)) {
+        await deleteTicketFile({ client, ticket });
+      }
+      update((t) => withTicketsCleared(t));
+      setMsg("Wallet cleared. Upload the PDF once to match names again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!trip) return null;
 
   const filterName = personId
     ? trip.people.find((p) => p.id === personId)?.name.trim()
     : null;
+  const unassigned = ticketsOf(trip).filter((t) => !t.personId).length;
 
   return (
     <>
@@ -338,46 +360,39 @@ export function WalletPage() {
         </ViewOnlyBanner>
       ) : (
         <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Upload a group boarding-pass PDF with <strong>All travellers</strong> selected — we
-          match each page to names like Elena Morosanu. Tap a name to see only that person’s
-          passes.
+          Upload the boarding-pass PDF once — we match each page to names in Pack. Then tap a
+          traveller to see only their passes (e.g. 2 tickets for Elena).
         </p>
       )}
 
       {canEditTrip ? (
         <section className="panel wallet-upload">
           <div className="panel-head">
-            <h2>Add a pass</h2>
+            <h2>Travellers</h2>
           </div>
-          <label className="field">
-            <span>Label</span>
+          {trip.people.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              <Link href="/travellers">Add people in Pack</Link> using the same names as on the
+              boarding passes.
+            </p>
+          ) : (
+            <PersonFilterPicker
+              people={trip.people}
+              value={personId}
+              counts={passCounts}
+              disabled={busy}
+              onChange={setFilterPerson}
+            />
+          )}
+          <label className="field" style={{ marginTop: "1rem" }}>
+            <span>Label (optional)</span>
             <input
               type="text"
               value={label}
-              placeholder="e.g. easyJet boarding pass"
+              placeholder="e.g. easyJet"
               onChange={(e) => setLabel(e.target.value)}
             />
           </label>
-          <div className="field">
-            <span>Show / match traveller</span>
-            <PersonAssignPicker
-              people={trip.people}
-              value={personId}
-              disabled={busy}
-              onChange={setAssignPerson}
-              everyoneLabel="All travellers"
-            />
-            <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
-              All travellers: auto-split the PDF by names printed on each pass. A single name:
-              only keep that person’s pass from the PDF (and filter the list).
-            </p>
-            {trip.people.length === 0 ? (
-              <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
-                No travellers yet — <Link href="/travellers">add people in Pack</Link> using the
-                same names as on the boarding passes.
-              </p>
-            ) : null}
-          </div>
           <input
             ref={fileRef}
             type="file"
@@ -385,27 +400,39 @@ export function WalletPage() {
             hidden
             onChange={(e) => void onFileChosen(e.target.files?.[0] ?? null)}
           />
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => {
-              assignPersonRef.current = personId;
-              try {
-                sessionStorage.setItem(WALLET_ASSIGN_KEY, personId);
-              } catch {
-                /* ignore */
-              }
-              fileRef.current?.click();
-            }}
-          >
-            {busy ? "Adding…" : "Upload PDF or photo"}
-          </button>
+          <div className="toolbar" style={{ marginBottom: 0 }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => {
+                filterPersonRef.current = personId;
+                fileRef.current?.click();
+              }}
+            >
+              {busy ? "Working…" : "Upload boarding PDF"}
+            </button>
+            {ticketsOf(trip).length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={busy}
+                onClick={() => void clearAllPasses()}
+              >
+                Clear wallet
+              </button>
+            ) : null}
+          </div>
+          {unassigned > 0 ? (
+            <p className="muted" style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
+              {unassigned} unassigned pass{unassigned === 1 ? "" : "es"} hidden — use Clear
+              wallet, then re-upload to rematch by name.
+            </p>
+          ) : null}
           {!meta?.tripId ? (
             <p className="muted" style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
               Tip:{" "}
-              <Link href="/account">upload the trip to the cloud</Link> so passes sync to
-              travellers’ phones.
+              <Link href="/account">upload the trip to the cloud</Link> so passes sync to phones.
             </p>
           ) : null}
         </section>
@@ -414,9 +441,7 @@ export function WalletPage() {
       {msg ? <p className="estimate-msg">{msg}</p> : null}
 
       {canEditTrip && filterName ? (
-        <p className="muted" style={{ margin: "0 0 0.75rem" }}>
-          Showing passes for <strong>{filterName}</strong> only.
-        </p>
+        <h2 className="wallet-person-heading">{filterName}</h2>
       ) : null}
 
       {visible.length === 0 ? (
@@ -424,8 +449,8 @@ export function WalletPage() {
           <p className="muted" style={{ margin: 0 }}>
             {canEditTrip
               ? filterName
-                ? `No passes for ${filterName} yet — upload a PDF with All travellers, or assign one below.`
-                : "No passes yet — upload a boarding pass PDF or a clear photo of the QR code."
+                ? `No passes for ${filterName} yet. Upload the group boarding PDF (names are matched automatically).`
+                : "Select a traveller above."
               : "No passes shared with you yet. Ask the trip organiser to upload them."}
           </p>
         </section>
@@ -436,8 +461,6 @@ export function WalletPage() {
               <div className="wallet-card-copy">
                 <strong>{ticket.label}</strong>
                 <span className="muted">
-                  {ticketPersonLabel(trip, ticket)}
-                  {" · "}
                   {isPdfTicket(ticket) ? "PDF" : isImageTicket(ticket) ? "Photo" : "File"}
                 </span>
               </div>
@@ -450,28 +473,14 @@ export function WalletPage() {
                   Show pass
                 </button>
                 {canEditTrip ? (
-                  <>
-                    <PersonAssignPicker
-                      people={trip.people}
-                      value={ticket.personId ?? ""}
-                      disabled={busy}
-                      onChange={(id) =>
-                        update((t) =>
-                          withTicketUpdated(t, ticket.id, {
-                            personId: id || null,
-                          }),
-                        )
-                      }
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      disabled={busy}
-                      onClick={() => void removePass(ticket)}
-                    >
-                      Remove
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={busy}
+                    onClick={() => void removePass(ticket)}
+                  >
+                    Remove
+                  </button>
                 ) : null}
               </div>
             </li>

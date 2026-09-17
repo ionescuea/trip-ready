@@ -161,7 +161,8 @@ export type PageForAssign = {
 
 /**
  * Assign each PDF page to at most one traveller by the name printed on that page.
- * Unmatched pages are omitted (never guessed by roster order).
+ * Keeps every matched page (e.g. outbound + return = 2 passes for the same person).
+ * Unmatched pages are omitted — never guessed by roster order.
  */
 export function assignPassPagesByName(
   pages: PageForAssign[],
@@ -172,38 +173,40 @@ export function assignPassPagesByName(
     ? people.filter((p) => p.id === opts.onlyPersonId)
     : people;
 
-  const byPage: { personId: string; score: number; page: PageForAssign }[] = [];
+  const out: { personId: string; personName: string; page: PageForAssign }[] =
+    [];
 
   for (const page of pages) {
-    let best: { personId: string; score: number } | null = null;
-    for (const person of pool) {
-      const score = scorePersonInPassText(page.text, person.name);
-      if (score < MATCH_THRESHOLD) continue;
-      if (!best || score > best.score) {
-        best = { personId: person.id, score };
-      }
-    }
-    if (best) {
-      byPage.push({ ...best, page });
-    }
+    const scored = pool
+      .map((person) => ({
+        personId: person.id,
+        personName: person.name.trim() || "Traveller",
+        score: scorePersonInPassText(page.text, person.name),
+      }))
+      .filter((s) => s.score >= MATCH_THRESHOLD)
+      .sort((a, b) => b.score - a.score);
+
+    if (scored.length === 0) continue;
+    // Skip ambiguous pages (two travellers score the same)
+    if (scored.length > 1 && scored[0]!.score === scored[1]!.score) continue;
+
+    const best = scored[0]!;
+    out.push({
+      personId: best.personId,
+      personName: best.personName,
+      page,
+    });
   }
 
-  // One pass per person — keep the highest-scoring page if several match
-  const bestPerPerson = new Map<
-    string,
-    { personId: string; score: number; page: PageForAssign }
-  >();
-  for (const row of byPage) {
-    const prev = bestPerPerson.get(row.personId);
-    if (!prev || row.score > prev.score) bestPerPerson.set(row.personId, row);
-  }
+  return out;
+}
 
-  return [...bestPerPerson.values()].map((row) => ({
-    personId: row.personId,
-    personName:
-      people.find((p) => p.id === row.personId)?.name.trim() || "Traveller",
-    page: row.page,
-  }));
+export function withTicketsCleared(trip: Trip): Trip {
+  return {
+    ...trip,
+    tickets: [],
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 export function withTicketsAdded(trip: Trip, tickets: TicketPass[]): Trip {

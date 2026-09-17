@@ -1960,6 +1960,13 @@ body {
   flex: 1 1 100%;
 }
 
+.wallet-person-heading {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
 .wallet-viewer {
   position: fixed;
   inset: 0;
