@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AddressField } from "@/components/AddressField";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -20,6 +21,7 @@ import {
   formatWhen,
   formatWhenParts,
 } from "@/lib/leaveBy";
+import { reconcilePickupStops } from "@/lib/personAddress";
 import type { BookingDetails, DriveLeg, ExtraStop, Trip } from "@/lib/types";
 
 type Props = {
@@ -29,7 +31,6 @@ type Props = {
   onChangeFromTown: (town: string) => void;
   onChangeToTown: (town: string) => void;
   onChangeHomeAddress: (homePostcode: string) => void;
-  onChangePersonAddress: (personId: string, address: string) => void;
   onChangeDrive: (
     minutes: number,
     distanceKm?: number,
@@ -38,6 +39,7 @@ type Props = {
   ) => void;
   onChangeParking: (minutes: number) => void;
   onChangeExtraStops: (stops: ExtraStop[]) => void;
+  onChangeTrip: (mutator: (t: Trip) => Trip) => void;
 };
 
 function newStopId() {
@@ -90,10 +92,10 @@ export function LeaveByPanel({
   onChangeFromTown,
   onChangeToTown,
   onChangeHomeAddress,
-  onChangePersonAddress,
   onChangeDrive,
   onChangeParking,
   onChangeExtraStops,
+  onChangeTrip,
 }: Props) {
   const { myPersonId } = usePermissions();
   const plan = computeLeaveBy(trip);
@@ -199,28 +201,20 @@ export function LeaveByPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trip.driverPersonId, trip.people, trip.bookings, readOnly]);
 
-  // Passengers with addresses → pick-up stops (never the driver)
+  // Passengers with saved addresses → pick-up stops (never the driver)
   useEffect(() => {
     if (readOnly) return;
     if (!trip.driverPersonId) return;
-    const missing = pickupPeople.filter(
-      (p) =>
-        p.address?.trim() &&
-        !(trip.extraStops ?? []).some((s) => s.personId === p.id),
-    );
-    if (missing.length === 0) return;
-    onChangeExtraStops([
-      ...(trip.extraStops ?? []),
-      ...missing.map((person, i) => ({
-        id: newStopId(),
-        label: `Pick up ${person.name.trim().split(/\s+/)[0] || person.name}`,
-        minutes: (trip.extraStops ?? []).length + i === 0 ? 0 : 5,
-        personId: person.id,
-        address: person.address ?? "",
-      })),
-    ]);
+    const next = reconcilePickupStops(trip);
+    if (
+      JSON.stringify(next.extraStops ?? []) ===
+      JSON.stringify(trip.extraStops ?? [])
+    ) {
+      return;
+    }
+    onChangeTrip(() => next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trip.people, trip.extraStops, trip.driverPersonId, readOnly]);
+  }, [trip.people, trip.driverPersonId, trip.extraStops, readOnly]);
 
   const toTownValue = trip.toTown?.trim() || inferredTo;
   const originReady = driverReady;
@@ -441,11 +435,6 @@ export function LeaveByPanel({
     [trip.extraStops, trip.people],
   );
   const mappedWaypointCount = mappedStops.length;
-  const unmappedStops = useMemo(
-    () =>
-      (trip.extraStops ?? []).filter((s) => !resolveStopAddress(trip, s)),
-    [trip.extraStops, trip.people],
-  );
   const expectedLegCount = mappedWaypointCount + 1;
   const actualLegCount = trip.driveLegs?.length ?? 0;
   const driveIncludesPickups =
@@ -475,29 +464,9 @@ export function LeaveByPanel({
     );
   }
 
-  function addPickupStop() {
-    const used = new Set(
-      (trip.extraStops ?? []).map((s) => s.personId).filter(Boolean),
-    );
-    const person =
-      pickupPeople.find((p) => p.address?.trim() && !used.has(p.id)) ??
-      pickupPeople.find((p) => !used.has(p.id));
-    if (!person) return;
-    onChangeExtraStops([
-      ...(trip.extraStops ?? []),
-      {
-        id: newStopId(),
-        label: `Pick up ${person.name.split(/\s+/)[0]}`,
-        minutes: (trip.extraStops ?? []).filter((s) =>
-          Boolean(s.address?.trim() || s.personId),
-        ).length === 0
-          ? 0
-          : 5,
-        personId: person.id,
-        address: person.address ?? "",
-      },
-    ]);
-  }
+  const personPickups = (trip.extraStops ?? []).filter((s) => s.personId);
+  const customStops = (trip.extraStops ?? []).filter((s) => !s.personId);
+  const missingPickupPeople = pickupPeople.filter((p) => !p.address?.trim());
 
   return (
     <section className="panel accent">
@@ -659,25 +628,51 @@ export function LeaveByPanel({
       </div>
 
       {pickupPeople.length > 0 ? (
-        <section className="pickup-people">
-          <div className="panel-head" style={{ padding: 0, marginBottom: "0.65rem" }}>
-            <h2 style={{ fontSize: "1.05rem", margin: 0 }}>Pick-up addresses</h2>
+        <section className="pickup-summary">
+          <div className="panel-head" style={{ padding: 0, marginBottom: "0.55rem" }}>
+            <h2 style={{ fontSize: "1.05rem", margin: 0 }}>Pick-ups on this drive</h2>
           </div>
-          <p className="muted" style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
-            Other travellers only — collected after the driver leaves.
-          </p>
-          <div className="people-edit">
-            {pickupPeople.map((p) => (
-              <div key={p.id} className="person-edit-block">
-                <p className="pickup-person-name">{p.name}</p>
-                <AddressField
-                  label="Pick-up address / postcode"
-                  value={p.address ?? ""}
-                  onChange={(address) => onChangePersonAddress(p.id, address)}
-                />
-              </div>
-            ))}
-          </div>
+          {personPickups.length > 0 ? (
+            <ul className="pickup-summary-list">
+              {personPickups.map((stop) => {
+                const person = trip.people.find((p) => p.id === stop.personId);
+                return (
+                  <li key={stop.id}>
+                    <div>
+                      <strong>{person?.name ?? stop.label}</strong>
+                      <span className="muted">
+                        {resolveStopAddress(trip, stop) || "Address missing"}
+                      </span>
+                    </div>
+                    {stop.personId ? (
+                      <Link
+                        href={`/travellers/${stop.personId}`}
+                        className="btn btn-ghost"
+                        style={{ padding: "0.35rem 0.55rem", fontSize: "0.78rem" }}
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="muted" style={{ margin: "0 0 0.5rem", fontSize: "0.9rem" }}>
+              No pick-ups yet — add a postcode on each traveller’s packing page.
+            </p>
+          )}
+          {missingPickupPeople.length > 0 ? (
+            <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.85rem" }}>
+              Still needed:{" "}
+              {missingPickupPeople.map((p, i) => (
+                <span key={p.id}>
+                  {i > 0 ? ", " : ""}
+                  <Link href={`/travellers/${p.id}`}>{p.name.split(/\s+/)[0]}</Link>
+                </span>
+              ))}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -731,17 +726,6 @@ export function LeaveByPanel({
           </ol>
         ) : null}
 
-        {mappedStops.length > 0 ? (
-          <ul className="pickup-dwell-list">
-            {mappedStops.map((s) => (
-              <li key={s.id}>
-                <span>{s.label}</span>
-                <strong>{formatDuration(s.dwell)}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
         {routeMissingPickups ? (
           <p className="route-warn">
             Re-estimate the drive to include pick-up travel time.
@@ -749,44 +733,35 @@ export function LeaveByPanel({
         ) : null}
       </div>
 
-      {unmappedStops.length > 0 ? (
-        <p className="route-warn">
-          {unmappedStops.length === 1
-            ? `Add an address for “${unmappedStops[0].label || "stop"}”.`
-            : `Add addresses for ${unmappedStops.length} stops.`}
-        </p>
-      ) : null}
-
       <div className="extra-stops">
         <div className="extra-stops-head">
           <div>
-            <strong>Extra stops</strong>
+            <strong>Other stops</strong>
+            <p className="muted" style={{ margin: "0.2rem 0 0", fontSize: "0.85rem" }}>
+              Petrol or anything that isn’t a traveller pick-up.
+            </p>
           </div>
-          <div className="extra-stops-actions">
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() =>
-                onChangeExtraStops([
-                  ...(trip.extraStops ?? []),
-                  { id: newStopId(), label: "Petrol", minutes: 10, address: "" },
-                ])
-              }
-            >
-              Add petrol
-            </button>
-            {trip.people.some((p) => p.name.trim()) ? (
-              <button type="button" className="btn btn-ghost" onClick={addPickupStop}>
-                Pick up traveller
+          {!readOnly ? (
+            <div className="extra-stops-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() =>
+                  onChangeExtraStops([
+                    ...personPickups,
+                    ...customStops,
+                    { id: newStopId(), label: "Petrol", minutes: 10, address: "" },
+                  ])
+                }
+              >
+                Add petrol
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
-        {(trip.extraStops ?? []).length === 0 ? null : (
+        {customStops.length === 0 ? null : (
           <ul className="extra-stop-list">
-            {(trip.extraStops ?? []).map((stop) => {
-              const mappedAddress = resolveStopAddress(trip, stop);
-              return (
+            {customStops.map((stop) => (
               <li key={stop.id} className="extra-stop-card">
                 <div className="extra-stop-row">
                   <label className="field compact">
@@ -795,6 +770,7 @@ export function LeaveByPanel({
                       type="text"
                       value={stop.label}
                       placeholder="e.g. Petrol"
+                      disabled={readOnly}
                       onChange={(e) => patchStop(stop.id, { label: e.target.value })}
                     />
                   </label>
@@ -805,6 +781,7 @@ export function LeaveByPanel({
                       min={0}
                       max={180}
                       value={stop.minutes || ""}
+                      disabled={readOnly}
                       onChange={(e) =>
                         patchStop(stop.id, {
                           minutes: Number(e.target.value) || 0,
@@ -812,64 +789,29 @@ export function LeaveByPanel({
                       }
                     />
                   </label>
-                  <button
-                    type="button"
-                    className="btn btn-ghost extra-stop-remove"
-                    aria-label={`Remove ${stop.label || "stop"}`}
-                    onClick={() =>
-                      onChangeExtraStops(
-                        (trip.extraStops ?? []).filter((s) => s.id !== stop.id),
-                      )
-                    }
-                  >
-                    Remove
-                  </button>
+                  {!readOnly ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost extra-stop-remove"
+                      aria-label={`Remove ${stop.label || "stop"}`}
+                      onClick={() =>
+                        onChangeExtraStops(
+                          (trip.extraStops ?? []).filter((s) => s.id !== stop.id),
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
                 <AddressField
                   label="Address / postcode"
                   className="compact"
-                  value={
-                    stop.personId && !stop.address?.trim()
-                      ? mappedAddress
-                      : (stop.address ?? "")
-                  }
-                  onChange={(address) =>
-                    patchStop(stop.id, {
-                      address,
-                    })
-                  }
+                  value={stop.address ?? ""}
+                  onChange={(address) => patchStop(stop.id, { address })}
                 />
-                {pickupPeople.length > 0 ? (
-                  <label className="field compact">
-                    <span>Or pick up traveller</span>
-                    <select
-                      value={stop.personId ?? ""}
-                      onChange={(e) => {
-                        const personId = e.target.value || undefined;
-                        const person = pickupPeople.find((p) => p.id === personId);
-                        patchStop(stop.id, {
-                          personId,
-                          address: person?.address ?? "",
-                          label: person
-                            ? `Pick up ${person.name.split(/\s+/)[0]}`
-                            : stop.label,
-                          minutes: stop.minutes || 5,
-                        });
-                      }}
-                    >
-                      <option value="">Not a pick-up</option>
-                      {pickupPeople.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                          {p.address?.trim() ? "" : " (add address above)"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
               </li>
-              );
-            })}
+            ))}
           </ul>
         )}
       </div>

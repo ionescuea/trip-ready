@@ -11,7 +11,53 @@ function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || name.trim();
 }
 
-/** Update a traveller’s pick-up address and keep linked leave-by stops in sync. */
+/**
+ * Rebuild traveller pick-up stops from saved people[].address.
+ * Petrol / custom stops (no personId) are kept as-is.
+ */
+export function reconcilePickupStops(trip: Trip): Trip {
+  const driverId = getDriverPerson(trip)?.id;
+  const customStops = (trip.extraStops ?? []).filter((s) => !s.personId);
+  const passengers = trip.people.filter(
+    (p) => p.id !== driverId && p.address?.trim(),
+  );
+
+  const pickupStops: ExtraStop[] = passengers.map((person, i) => {
+    const existing = (trip.extraStops ?? []).find((s) => s.personId === person.id);
+    return {
+      id: existing?.id ?? newStopId(),
+      label: `Pick up ${firstName(person.name)}`,
+      minutes: existing?.minutes ?? (i === 0 ? 0 : 5),
+      personId: person.id,
+      address: person.address!.trim(),
+    };
+  });
+
+  const nextStops = [...pickupStops, ...customStops];
+  const prev = trip.extraStops ?? [];
+  const same =
+    prev.length === nextStops.length &&
+    prev.every((s, i) => {
+      const n = nextStops[i];
+      return (
+        n &&
+        s.id === n.id &&
+        s.personId === n.personId &&
+        s.address === n.address &&
+        s.label === n.label &&
+        s.minutes === n.minutes
+      );
+    });
+  if (same) return trip;
+
+  return {
+    ...trip,
+    extraStops: nextStops,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Update a traveller’s pick-up address and keep leave-by stops in sync. */
 export function withPersonAddress(
   trip: Trip,
   personId: string,
@@ -27,37 +73,19 @@ export function withPersonAddress(
         person.id === personId ? { ...person, address } : person,
       ),
       extraStops: (trip.extraStops ?? []).filter((s) => s.personId !== personId),
+      updatedAt: new Date().toISOString(),
     };
   }
 
   const people = trip.people.map((person) =>
     person.id === personId ? { ...person, address } : person,
   );
-  const person = people.find((p) => p.id === personId);
-  let extraStops = (trip.extraStops ?? []).map((stop) =>
-    stop.personId === personId ? { ...stop, address } : stop,
-  );
 
-  const trimmed = address.trim();
-  const hasStop = extraStops.some((s) => s.personId === personId);
-  if (trimmed && !hasStop && person) {
-    const existingPickups = extraStops.filter((s) =>
-      Boolean(s.personId || s.address?.trim()),
-    ).length;
-    extraStops = [
-      ...extraStops,
-      {
-        id: newStopId(),
-        label: `Pick up ${firstName(person.name)}`,
-        // First passenger pick-up: no wait
-        minutes: existingPickups === 0 ? 0 : 5,
-        personId,
-        address: trimmed,
-      },
-    ];
-  }
-
-  return { ...trip, people, extraStops };
+  return reconcilePickupStops({
+    ...trip,
+    people,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export function withPersonName(trip: Trip, personId: string, name: string): Trip {
@@ -73,7 +101,7 @@ export function withPersonName(trip: Trip, personId: string, name: string): Trip
       label: first ? `Pick up ${first}` : stop.label,
     };
   });
-  return { ...trip, people, extraStops };
+  return { ...trip, people, extraStops, updatedAt: new Date().toISOString() };
 }
 
 export function personAddressLabel(person: Person): string {

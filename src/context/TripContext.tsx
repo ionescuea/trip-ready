@@ -231,6 +231,8 @@ type TripContextValue = {
   cloudSyncing: boolean;
   cloudError: string | null;
   update: (mutator: (t: Trip) => Trip) => void;
+  /** Name / pick-up address — owner any person; traveller only self. */
+  updatePersonDetails: (personId: string, mutator: (t: Trip) => Trip) => void;
   replaceTrip: (trip: Trip) => void;
   ingest: (text: string, sourceName: string) => Promise<void>;
   resetTrip: () => void;
@@ -385,6 +387,20 @@ export function TripProvider({ children }: { children: ReactNode }) {
       setTrip((current) => (current ? mutator(current) : current));
     },
     [meta],
+  );
+
+  /** Traveller profile fields (name, pick-up address) including own address for travellers. */
+  const updatePersonDetails = useCallback(
+    (personId: string, mutator: (t: Trip) => Trip) => {
+      if (!canEditPersonChecks(meta, personId)) return;
+      if (isOwnerEditingOther(meta, personId)) {
+        const name =
+          trip?.people.find((p) => p.id === personId)?.name?.trim() || "this traveller";
+        if (!confirmOwnerEditOther(name)) return;
+      }
+      setTrip((current) => (current ? mutator(current) : current));
+    },
+    [meta, trip?.people],
   );
 
   /** Checklist / luggage toggles — travellers only for their own person. */
@@ -648,6 +664,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     cloudSyncing,
     cloudError,
     update,
+    updatePersonDetails,
     replaceTrip,
     ingest,
     resetTrip,

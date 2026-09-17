@@ -5,9 +5,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { ViewOnlyBanner } from "@/components/PermissionBanners";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { withDriver, withDriverStartAddress } from "@/lib/driver";
 import { townFromUkAddress } from "@/lib/addressFormat";
-import { withPersonAddress } from "@/lib/personAddress";
+import { withDriver, withDriverStartAddress } from "@/lib/driver";
 
 export function LeaveByPage() {
   const { trip, update } = useTrip();
@@ -39,9 +38,6 @@ export function LeaveByPage() {
               };
             })
           }
-          onChangePersonAddress={(personId, address) =>
-            update((t) => withPersonAddress(t, personId, address))
-          }
           onChangeDrive={(minutes, distanceKm, legs, orderedStops) =>
             update((t) => ({
               ...t,
@@ -53,7 +49,14 @@ export function LeaveByPage() {
             }))
           }
           onChangeParking={(minutes) => update((t) => ({ ...t, parkingMinutes: minutes }))}
-          onChangeExtraStops={(extraStops) => update((t) => ({ ...t, extraStops }))}
+          onChangeExtraStops={(extraStops) =>
+            update((t) => ({
+              ...t,
+              extraStops,
+              updatedAt: new Date().toISOString(),
+            }))
+          }
+          onChangeTrip={(mutator) => update(mutator)}
         />
       </div>
     </>

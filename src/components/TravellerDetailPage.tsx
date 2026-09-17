@@ -2,17 +2,20 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { AddressField } from "@/components/AddressField";
 import { PageHeader } from "@/components/PageHeader";
 import { OwnerEditWarning, ViewOnlyBanner } from "@/components/PermissionBanners";
 import { PersonalChecklist } from "@/components/PersonalChecklist";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { withPersonName } from "@/lib/personAddress";
+import { getDriverPerson } from "@/lib/driver";
+import { withPersonAddress, withPersonName } from "@/lib/personAddress";
 import { DOCUMENT_ROWS, LUGGAGE_ROWS } from "@/lib/types";
 
 export function TravellerDetailPage() {
   const params = useParams<{ personId: string }>();
-  const { trip, toggleChecklist, toggleLuggage, update } = useTrip();
+  const { trip, toggleChecklist, toggleLuggage, update, updatePersonDetails } =
+    useTrip();
   const { canEditPerson, canEditTrip, isEditingOther, isTraveller, myPersonId } =
     usePermissions();
   if (!trip) return null;
@@ -33,6 +36,8 @@ export function TravellerDetailPage() {
 
   const editable = canEditPerson(person.id);
   const ownerOther = isEditingOther(person.id);
+  const driver = getDriverPerson(trip);
+  const isDriver = driver?.id === person.id;
 
   if (isTraveller && myPersonId && person.id !== myPersonId) {
     return (
@@ -76,6 +81,29 @@ export function TravellerDetailPage() {
             </label>
           </section>
         ) : null}
+
+        {editable ? (
+          <section className="panel">
+            <div className="panel-head">
+              <h2>{isDriver ? "Driver start" : "Pick-up address"}</h2>
+            </div>
+            <p className="muted" style={{ margin: "0 0 0.75rem" }}>
+              {isDriver
+                ? "You’re the driver — this is where the leave-by route starts (not a pick-up)."
+                : "Saved when you leave the field. Leave-by adds you as a stop on the drive automatically."}
+            </p>
+            <AddressField
+              label={isDriver ? "Start address / postcode" : "Address / postcode"}
+              value={person.address ?? ""}
+              onChange={(address) =>
+                updatePersonDetails(person.id, (t) =>
+                  withPersonAddress(t, person.id, address),
+                )
+              }
+            />
+          </section>
+        ) : null}
+
         <PersonalChecklist
           title="Documents"
           items={DOCUMENT_ROWS}

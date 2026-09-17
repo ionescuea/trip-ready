@@ -35,9 +35,6 @@ export function TravellersPage() {
           <button type="button" className="btn btn-primary" onClick={addTraveller}>
             Add traveller
           </button>
-          <Link href="/leave-by" className="btn btn-ghost">
-            Pick-up addresses
-          </Link>
         </div>
       ) : null}
 
