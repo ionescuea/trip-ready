@@ -29,10 +29,13 @@ type AiBooking = {
   remainingBalance?: string;
 };
 
-const TYPES: BookingType[] = ["flight", "hotel", "parking", "other"];
+const TYPES: BookingType[] = ["flight", "hotel", "parking", "experience", "other"];
 
 function asType(value?: string): BookingType {
   const t = (value ?? "other").toLowerCase();
+  if (t === "activity" || t === "tour" || t === "excursion" || t === "daytrip") {
+    return "experience";
+  }
   return (TYPES.includes(t as BookingType) ? t : "other") as BookingType;
 }
 
@@ -95,7 +98,9 @@ export function normalizeAiBookings(raw: unknown): ExtractResult[] {
               ? "Hotel"
               : asType(item.type) === "parking"
                 ? "Parking"
-                : "Booking";
+                : asType(item.type) === "experience"
+                  ? "Day trip"
+                  : "Booking";
       }
 
       return {
@@ -106,7 +111,7 @@ export function normalizeAiBookings(raw: unknown): ExtractResult[] {
         autoConfirmed: isAutoConfirmed(status),
       };
     })
-    .filter((r) => r.type !== "other" || r.fields.usefulInfo || r.fields.number);
+    .filter((r) => r.type !== "other" || Boolean(r.fields.usefulInfo || r.fields.number));
 }
 
 export const EXTRACT_SYSTEM_PROMPT = `You extract travel bookings from confirmation emails/PDFs into structured JSON.
@@ -115,7 +120,7 @@ Return ONLY valid JSON of the form:
 {
   "bookings": [
     {
-      "type": "flight" | "hotel" | "parking" | "other",
+      "type": "flight" | "hotel" | "parking" | "experience" | "other",
       "name": string,
       "number": string,
       "startDate": string,
@@ -145,13 +150,14 @@ Return ONLY valid JSON of the form:
 Rules:
 - If one document contains flights AND hotel (package holiday), return TWO bookings (flight + hotel).
 - Parking is a separate booking when present.
+- TUI / Musement tours, day trips, cruises, guided walks, food tours → type "experience". Put the meeting point in locationRelative. Put inclusions, dress code, print-voucher notes, and local contact in usefulInfo.
 - Prefer DD/MM/YYYY for dates and HH:MM (24h) for times when possible.
 - For UK airport parking, "Departure" is parking start and "Return" is parking end.
 - CRITICAL: If the booking states how early to arrive at the airport (e.g. "3 hours before departure"), set arriveEarlyMinutes to that value in minutes (e.g. "180"). Also mention it in usefulInfo. Do NOT invent arrive-early if the text is silent.
 - For parking, if shuttle/transfer time is stated (e.g. "5 minutes to the terminal"), set transferMinutes.
 - status: use "confirmed" if booking/reservation is confirmed; "paid" if fully paid; "unpaid" if balance/deposit due; else "unknown".
-- people: comma-separated passenger/guest/driver names without titles if easy.
-- usefulInfo: short notes (bags, board basis, room, shuttle, transfer, address, extra refs).
+- people: comma-separated passenger/guest/driver names without titles if easy. For experiences, ticket counts like "3 x Adult" are fine.
+- usefulInfo: short notes (bags, board basis, room, shuttle, transfer, address, extra refs, inclusions).
 - Omit unknown fields or use empty string.
 - Do not invent bookings that are not in the text.
 - Booking-stated times, arrive-early rules, and transfer times are the most important fields — extract them carefully.`;

@@ -4,6 +4,8 @@ import { useEffect, useState, type MouseEvent } from "react";
 import type { Booking, BookingDetails, BookingStatus } from "@/lib/types";
 import { BOOKING_STATUS_OPTIONS } from "@/lib/types";
 import { isAutoConfirmed } from "@/lib/bookingDetails";
+import { sortedExperiences } from "@/lib/experiences";
+import type { Trip } from "@/lib/types";
 
 type Props = {
   bookings: Booking[];
@@ -18,15 +20,17 @@ type Props = {
   readOnly?: boolean;
 };
 
-/** Always show: parking → flight → hotel → other. Missing types are omitted. */
+/** Travel logistics first; day trips listed separately below. */
 const TYPE_ORDER = ["parking", "flight", "hotel", "other"] as const;
 
-function sortBookings(bookings: Booking[]): Booking[] {
-  return [...bookings].sort((a, b) => {
-    const ai = TYPE_ORDER.indexOf(a.type as (typeof TYPE_ORDER)[number]);
-    const bi = TYPE_ORDER.indexOf(b.type as (typeof TYPE_ORDER)[number]);
-    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-  });
+function sortTravelBookings(bookings: Booking[]): Booking[] {
+  return bookings
+    .filter((b) => b.type !== "experience")
+    .sort((a, b) => {
+      const ai = TYPE_ORDER.indexOf(a.type as (typeof TYPE_ORDER)[number]);
+      const bi = TYPE_ORDER.indexOf(b.type as (typeof TYPE_ORDER)[number]);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
 }
 
 function Field({
@@ -73,6 +77,7 @@ function BookingCard({
   const [dirty, setDirty] = useState(false);
   const d = booking.extracted;
   const isParking = booking.type === "parking";
+  const isExperience = booking.type === "experience";
   const needsRouteStart = isParking && !routeStartChecked;
 
   useEffect(() => {
@@ -94,7 +99,8 @@ function BookingCard({
     e.stopPropagation();
     if (readOnly) return;
     const label = d.name?.trim() || booking.type;
-    if (!window.confirm(`Remove this ${booking.type} booking?\n\n${label}`)) return;
+    const kind = isExperience ? "day trip" : booking.type;
+    if (!window.confirm(`Remove this ${kind}?\n\n${label}`)) return;
     onRemove(booking.id);
   }
 
@@ -113,13 +119,14 @@ function BookingCard({
   }
 
   const showSave = !readOnly && (dirty || !booking.confirmed);
+  const typeTag = isExperience ? "day trip" : booking.type;
 
   return (
     <article
-      className={`booking ${booking.confirmed && !dirty && !needsRouteStart ? "confirmed" : ""}`}
+      className={`booking ${booking.confirmed && !dirty && !needsRouteStart ? "confirmed" : ""}${isExperience ? " booking-experience" : ""}`}
     >
       <header>
-        <span className="tag">{booking.type}</span>
+        <span className="tag">{typeTag}</span>
         <span className="muted">{booking.sourceName}</span>
         {dirty ? (
           <span className="pill warn">Unsaved edits</span>
@@ -133,12 +140,48 @@ function BookingCard({
       </header>
 
       <div className="grid-fields">
-        <Field label="Booking name" value={d.name} onChange={(v) => edit({ name: v })} readOnly={readOnly} />
-        <Field label="Booking number" value={d.number} onChange={(v) => edit({ number: v })} readOnly={readOnly} />
-        <Field label="Start date" value={d.startDate} onChange={(v) => edit({ startDate: v })} readOnly={readOnly} />
-        <Field label="End date" value={d.endDate} onChange={(v) => edit({ endDate: v })} readOnly={readOnly} />
-        <Field label="Start time" value={d.startTime} onChange={(v) => edit({ startTime: v })} readOnly={readOnly} />
-        <Field label="End time" value={d.endTime} onChange={(v) => edit({ endTime: v })} readOnly={readOnly} />
+        <Field
+          label={isExperience ? "Tour / experience" : "Booking name"}
+          value={d.name}
+          onChange={(v) => edit({ name: v })}
+          readOnly={readOnly}
+        />
+        {!isExperience ? (
+          <Field
+            label="Booking number"
+            value={d.number}
+            onChange={(v) => edit({ number: v })}
+            readOnly={readOnly}
+          />
+        ) : null}
+        <Field
+          label={isExperience ? "Date" : "Start date"}
+          value={d.startDate}
+          onChange={(v) => edit({ startDate: v })}
+          readOnly={readOnly}
+        />
+        {!isExperience ? (
+          <Field
+            label="End date"
+            value={d.endDate}
+            onChange={(v) => edit({ endDate: v })}
+            readOnly={readOnly}
+          />
+        ) : null}
+        <Field
+          label={isExperience ? "Meet / start time" : "Start time"}
+          value={d.startTime}
+          onChange={(v) => edit({ startTime: v })}
+          readOnly={readOnly}
+        />
+        {!isExperience ? (
+          <Field
+            label="End time"
+            value={d.endTime}
+            onChange={(v) => edit({ endTime: v })}
+            readOnly={readOnly}
+          />
+        ) : null}
         <label className="field compact">
           <span>Status</span>
           <select
@@ -162,11 +205,25 @@ function BookingCard({
           </select>
         </label>
         <Field
-          label={isParking ? "People on booking / driver" : "People on booking"}
+          label={
+            isParking
+              ? "People on booking / driver"
+              : isExperience
+                ? "Tickets / who"
+                : "People on booking"
+          }
           value={d.people}
           onChange={(v) => edit({ people: v })}
           readOnly={readOnly}
         />
+        {isExperience ? (
+          <Field
+            label="Meeting point"
+            value={d.locationRelative}
+            onChange={(v) => edit({ locationRelative: v })}
+            readOnly={readOnly}
+          />
+        ) : null}
         {booking.type === "flight" ? (
           <Field
             label="Arrive early (minutes before departure)"
@@ -207,9 +264,9 @@ function BookingCard({
       ) : null}
 
       <label className="field">
-        <span>Other useful info</span>
+        <span>{isExperience ? "What to bring / notes" : "Other useful info"}</span>
         <textarea
-          rows={3}
+          rows={isExperience ? 4 : 3}
           value={d.usefulInfo ?? ""}
           readOnly={readOnly}
           disabled={readOnly}
@@ -243,6 +300,29 @@ function BookingCard({
   );
 }
 
+function DayTripsTimeline({ trip }: { trip: Trip }) {
+  const list = sortedExperiences(trip);
+  if (list.length === 0) return null;
+  return (
+    <ol className="day-trips-timeline" aria-label="Day trips in order">
+      {list.map((b) => {
+        const d = b.extracted;
+        return (
+          <li key={b.id}>
+            <span className="day-trips-when">
+              {[d.startDate, d.startTime].filter(Boolean).join(" · ") || "Date TBC"}
+            </span>
+            <span className="day-trips-name">{d.name || "Experience"}</span>
+            {d.locationRelative ? (
+              <span className="day-trips-where">{d.locationRelative}</span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function BookingList({
   bookings,
   onConfirm,
@@ -251,9 +331,16 @@ export function BookingList({
   onSetRouteStart,
   readOnly,
 }: Props) {
-  const ordered = sortBookings(bookings);
+  const travel = sortTravelBookings(bookings);
+  const experiences = bookings
+    .filter((b) => b.type === "experience")
+    .sort((a, b) => {
+      const as = `${a.extracted.startDate ?? ""} ${a.extracted.startTime ?? ""}`;
+      const bs = `${b.extracted.startDate ?? ""} ${b.extracted.startTime ?? ""}`;
+      return as.localeCompare(bs);
+    });
 
-  if (ordered.length === 0) {
+  if (travel.length === 0 && experiences.length === 0) {
     return (
       <section className="panel">
         <div className="panel-head">
@@ -263,25 +350,61 @@ export function BookingList({
     );
   }
 
+  const tripStub = { bookings } as Trip;
+
   return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2>Bookings</h2>
-      </div>
-      <div className="booking-stack">
-        {ordered.map((b) => (
-          <BookingCard
-            key={b.id}
-            booking={b}
-            routeStartChecked={b.type === "parking" && b.extracted.routeStart === true}
-            onConfirm={onConfirm}
-            onRemove={onRemove}
-            onChange={onChange}
-            onSetRouteStart={onSetRouteStart}
-            readOnly={readOnly}
-          />
-        ))}
-      </div>
-    </section>
+    <>
+      {travel.length > 0 ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Travel bookings</h2>
+          </div>
+          <div className="booking-stack">
+            {travel.map((b) => (
+              <BookingCard
+                key={b.id}
+                booking={b}
+                routeStartChecked={b.type === "parking" && b.extracted.routeStart === true}
+                onConfirm={onConfirm}
+                onRemove={onRemove}
+                onChange={onChange}
+                onSetRouteStart={onSetRouteStart}
+                readOnly={readOnly}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="panel" id="day-trips">
+        <div className="panel-head">
+          <h2>While there — day trips</h2>
+        </div>
+        {experiences.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Paste a TUI / Musement confirmation (Acropolis, cruise, Meteora, food tour…) and
+            we’ll add it here in date order.
+          </p>
+        ) : (
+          <>
+            <DayTripsTimeline trip={tripStub} />
+            <div className="booking-stack" style={{ marginTop: "1rem" }}>
+              {experiences.map((b) => (
+                <BookingCard
+                  key={b.id}
+                  booking={b}
+                  routeStartChecked={false}
+                  onConfirm={onConfirm}
+                  onRemove={onRemove}
+                  onChange={onChange}
+                  onSetRouteStart={onSetRouteStart}
+                  readOnly={readOnly}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+    </>
   );
 }

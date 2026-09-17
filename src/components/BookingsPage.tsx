@@ -24,6 +24,13 @@ export function BookingsPage() {
         </ViewOnlyBanner>
       ) : null}
 
+      {canEditTrip ? (
+        <p className="muted" style={{ margin: "0 0 1rem" }}>
+          Drop flight, hotel and parking as usual. For Greece day trips, paste the TUI /
+          Musement confirmation email — they land under <strong>While there</strong>.
+        </p>
+      ) : null}
+
       {extracting ? (
         <div className="banner">
           <p>Extracting booking details…</p>

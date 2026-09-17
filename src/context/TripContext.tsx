@@ -473,7 +473,17 @@ export function TripProvider({ children }: { children: ReactNode }) {
           nextBookings =
             result.type === "other"
               ? [...nextBookings, booking]
-              : [...nextBookings.filter((b) => b.type !== result.type), booking];
+              : result.type === "experience"
+                ? [
+                    ...nextBookings.filter((b) => {
+                      if (b.type !== "experience") return true;
+                      const a = `${b.extracted.name}|${b.extracted.startDate}|${b.extracted.startTime}`;
+                      const c = `${booking.extracted.name}|${booking.extracted.startDate}|${booking.extracted.startTime}`;
+                      return a !== c;
+                    }),
+                    booking,
+                  ]
+                : [...nextBookings.filter((b) => b.type !== result.type), booking];
 
           if (result.type === "flight") {
             if (result.fields.status === "paid" || result.fields.status === "confirmed") {

@@ -2200,3 +2200,44 @@ html.wallet-viewer-open .bottom-nav {
     padding: 1rem 0.95rem 1.05rem;
   }
 }
+
+.day-trips-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.day-trips-timeline li {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.65rem;
+  background: rgba(15, 70, 72, 0.06);
+  border: 1px solid var(--line);
+}
+
+.day-trips-when {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.day-trips-name {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.day-trips-where {
+  font-size: 0.88rem;
+  opacity: 0.75;
+}
+
+.booking-experience .tag {
+  text-transform: lowercase;
+}

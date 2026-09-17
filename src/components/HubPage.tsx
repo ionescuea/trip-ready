@@ -10,6 +10,7 @@ import {
   readinessSectionStatus,
   travellersSectionStatus,
 } from "@/lib/sectionStatus";
+import { experienceSectionStatus } from "@/lib/experiences";
 
 function daysUntil(startDate?: string): string | null {
   if (!startDate?.trim()) return null;
@@ -75,6 +76,13 @@ function MenuIcon({ name }: { name: string }) {
           <path d="M15 13h4" />
         </svg>
       );
+    case "daytrips":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      );
     default:
       return (
         <svg {...common}>
@@ -124,6 +132,7 @@ export function HubPage() {
   const leaveBy = leaveBySectionStatus(trip);
   const ready = readinessSectionStatus(flags);
   const travellers = travellersSectionStatus(trip);
+  const dayTrips = experienceSectionStatus(trip);
 
   const menu = [
     {
@@ -132,6 +141,13 @@ export function HubPage() {
       detail: bookings.label,
       icon: "flight",
       tone: bookings.tone,
+    },
+    {
+      href: "/bookings#day-trips",
+      title: "While there",
+      detail: dayTrips.label,
+      icon: "daytrips",
+      tone: dayTrips.tone,
     },
     {
       href: "/leave-by",

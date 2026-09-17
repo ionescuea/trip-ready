@@ -318,13 +318,15 @@ function sectionFor(type: BookingType, text: string): string {
       /(?:accommodation|hotel details|your hotel|your stay|check[\s-]?in|room type)/i,
     parking:
       /(?:car park|parking details|park and go|parking summary)/i,
+    experience:
+      /(?:enjoy your experience|ticket info|meeting point|guided tour|day trip)/i,
     other: /^/,
   };
 
   const start = text.search(markers[type]);
   if (start < 0) return text;
 
-  const others = (["flight", "hotel", "parking"] as BookingType[])
+  const others = (["flight", "hotel", "parking", "experience"] as BookingType[])
     .filter((t) => t !== type)
     .map((t) => {
       const idx = text.slice(start + 10).search(markers[t]);
@@ -598,12 +600,167 @@ function extractParking(text: string, notes: string[]): ExtractResult {
   };
 }
 
+function isExperienceConfirmation(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    (/enjoy your experience|tui musement|tui-experiences|tuimusement/i.test(t) ||
+      /guided tour|day trip|street food|full-day cruise|meeting point/i.test(t)) &&
+    /ticket info|download (?:your )?(?:voucher|ticket)|order is complete/i.test(t) &&
+    !/boarding pass|flight reference|car park|holiday reference/i.test(t)
+  );
+}
+
+/** Parse “Monday, 21 Sep 2026, 3:00 PM” / “Thursday, 24 Sep 2026, 8:00 AM”. */
+function parseExperienceDateTime(raw: string): { date?: string; time?: string } {
+  const s = raw
+    .trim()
+    .replace(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s*/i, "")
+    .replace(/\s+/g, " ");
+  const ampm = s.match(
+    /^(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}),?\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i,
+  );
+  if (ampm) {
+    const base = parseFlexibleDate(ampm[1]!);
+    if (!base) return {};
+    let hour = Number(ampm[2]);
+    const minute = Number(ampm[3]);
+    const mer = ampm[4]!.toUpperCase();
+    if (mer === "PM" && hour < 12) hour += 12;
+    if (mer === "AM" && hour === 12) hour = 0;
+    return {
+      date: formatDateDMY(base),
+      time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    };
+  }
+  const d = parseFlexibleDate(s);
+  if (!d) return {};
+  const hasTime = /\d{1,2}:\d{2}/.test(s);
+  return {
+    date: formatDateDMY(d),
+    time: hasTime
+      ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+      : undefined,
+  };
+}
+
+function extractExperience(text: string, notes: string[]): ExtractResult {
+  const name =
+    findMatch(text, [
+      /Enjoy your experience\s*[-–—]\s*([^\n]{5,120})/i,
+      /Subject:\s*Confirmed!\s*Enjoy your experience\s*[-–—]\s*([^\n]{5,120})/i,
+      /(?:^|\n)([^\n]{5,100})\n\1/i, // duplicated tour title in Musement emails
+    ])?.replace(/\s+/g, " ").trim() || "Day trip / experience";
+
+  const whenRaw = findMatch(text, [
+    /DATE:\s*([^\n]{8,80})/i,
+    /Date:\s*([^\n]{8,80})/i,
+  ]);
+  const when = whenRaw ? parseExperienceDateTime(whenRaw) : {};
+
+  let meeting = findMatch(text, [
+    /Meeting point\s*(?:<\/?p>)?\s*([^<\n]{5,120})/i,
+    /Meeting point:\s*([^\n]{5,120})/i,
+    /Where:\s*Location[^\n]*Meeting point:\s*([^\n]{5,120})/i,
+  ]);
+  meeting = meeting
+    ?.replace(/<\/?p>/gi, "")
+    .replace(/Open in Google Maps.*/i, "")
+    .trim();
+
+  const tickets = findMatch(text, [
+    /(\d+\s*x\s+[^\n]{3,60})/i,
+  ]);
+
+  const lead = findMatch(text, [/Hi\s+([A-Za-z][A-Za-z\- ]{1,60}),/i]);
+
+  const includedBlock = text.match(
+    /Included:\s*([\s\S]*?)(?:Not included:|Where:|Meeting point|What to remember|Cancellation policy|$)/i,
+  )?.[1];
+  const notIncludedBlock = text.match(
+    /Not included:\s*([\s\S]*?)(?:Where:|Meeting point|What to remember|Cancellation policy|$)/i,
+  )?.[1];
+
+  const cleanBullets = (block?: string) =>
+    (block ?? "")
+      .replace(/Check Mark Icon[^\n]*/gi, "")
+      .replace(/<\/?[^>]+>/g, " ")
+      .split(/\n+/)
+      .map((l) => l.replace(/^[\s\-•*]+/, "").trim())
+      .filter((l) => l.length > 2 && l.length < 80)
+      .slice(0, 10);
+
+  const included = cleanBullets(includedBlock);
+  const notIncluded = cleanBullets(notIncludedBlock);
+
+  const remember: string[] = [];
+  if (/print the voucher|Remember to print/i.test(text)) {
+    remember.push("Print the voucher (not phone-only).");
+  } else if (/smartphone|Don't need to print|do not need to print/i.test(text)) {
+    remember.push("Phone voucher is enough — no print needed.");
+  }
+  if (/without transportation|no hotel pick-up|Not included:[\s\S]*Hotel pick-up/i.test(text)) {
+    remember.push("No hotel transfer — make your own way to the meeting point.");
+  }
+  if (/arrive .*15 minutes|at least 15 minutes/i.test(text)) {
+    remember.push("Arrive at least 15 minutes early.");
+  }
+  if (/wait for 5 minutes|only wait for 5/i.test(text)) {
+    remember.push("Guide waits only 5 minutes.");
+  }
+  if (/skirt|monaster|dress appropriately/i.test(text)) {
+    remember.push("Dress code for monasteries — cover knees/shoulders; bring cash for entry fees.");
+  }
+  if (/€\s*5|5 euros/i.test(text)) {
+    remember.push("Monastery entry ~€5 pp each, cash locally.");
+  }
+  const contact = findMatch(text, [
+    /contact the local operator at:\s*([^\n]{5,80})/i,
+    /local provider at\s*(\+?[\d\s]{8,20})/i,
+  ]);
+  if (contact) remember.push(`Local: ${contact}`);
+
+  const usefulBits = [
+    tickets ? `Tickets: ${tickets}` : null,
+    included.length ? `Included: ${included.join("; ")}` : null,
+    notIncluded.length ? `Not included: ${notIncluded.join("; ")}` : null,
+    ...remember,
+  ].filter(Boolean);
+
+  const fields = emptyDetails({
+    name,
+    startDate: when.date,
+    startTime: when.time,
+    status: "confirmed",
+    people: lead ? `${lead}${tickets ? ` · ${tickets}` : ""}` : tickets,
+    locationRelative: meeting,
+    usefulInfo: usefulBits.join("\n") || undefined,
+  });
+
+  if (!when.date) notes.push("Experience date unclear — check the confirmation.");
+  if (!meeting) notes.push("Meeting point not found — check the voucher.");
+
+  const filled = [fields.name, fields.startDate, fields.startTime, fields.locationRelative].filter(
+    Boolean,
+  ).length;
+  return {
+    type: "experience",
+    fields,
+    confidence: filled >= 3 ? "high" : filled >= 2 ? "medium" : "low",
+    notes: [...notes, "Saved as a day trip / experience."],
+    autoConfirmed: true,
+  };
+}
+
 /**
  * Extract every booking type found in a document.
  * A holiday PDF with flights + hotel returns two results.
  */
 export function extractAllFromText(rawText: string): ExtractResult[] {
   const text = normalizeExtractedText(rawText.replace(/\r\n/g, "\n"));
+
+  if (isExperienceConfirmation(text)) {
+    return [extractExperience(text, [])];
+  }
 
   if (isHolidayPackage(text)) {
     return extractHolidayPackage(text);
@@ -615,7 +772,7 @@ export function extractAllFromText(rawText: string): ExtractResult[] {
   // Fallback: pick the single strongest type
   if (types.length === 0) {
     const ranked = (Object.entries(scores) as [BookingType, number][])
-      .filter(([k]) => k !== "other")
+      .filter(([k]) => k !== "other" && k !== "experience")
       .sort((a, b) => b[1] - a[1]);
     if (ranked[0]?.[1] > 0) types = [ranked[0][0]];
   }
@@ -630,7 +787,7 @@ export function extractAllFromText(rawText: string): ExtractResult[] {
           status: statusFromText(text),
         }),
         confidence: "low",
-        notes: ["Could not classify as flight, hotel, or parking. Saved as other."],
+        notes: ["Could not classify as flight, hotel, parking, or experience. Saved as other."],
         autoConfirmed: false,
       },
     ];
@@ -646,6 +803,7 @@ export function extractAllFromText(rawText: string): ExtractResult[] {
     if (type === "flight") results.push(extractFlight(slice, notes));
     else if (type === "hotel") results.push(extractHotel(slice, notes));
     else if (type === "parking") results.push(extractParking(slice, notes));
+    else if (type === "experience") results.push(extractExperience(slice, notes));
   }
 
   // Package PDFs often put one booking ref at the top — apply to all cards

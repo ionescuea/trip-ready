@@ -1,4 +1,4 @@
-export type BookingType = "flight" | "hotel" | "parking" | "other";
+export type BookingType = "flight" | "hotel" | "parking" | "experience" | "other";
 
 /** What we need from every confirmation. */
 export type BookingStatus = "unpaid" | "paid" | "confirmed" | "unknown";
@@ -29,6 +29,10 @@ export type BookingDetails = {
   airport?: string;
   cabinBags?: string;
   holdBags?: string;
+  /**
+   * Parking: relative to airport / hotel distance.
+   * Experience: meeting point / where to be.
+   */
   locationRelative?: string;
   terminal?: string;
   shuttleIncluded?: string;
