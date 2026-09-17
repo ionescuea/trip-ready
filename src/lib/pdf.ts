@@ -83,3 +83,53 @@ export async function extractTextFromPdf(file: File): Promise<string> {
   }
   return text;
 }
+
+async function configurePdfWorker() {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url,
+  ).toString();
+  return pdfjs;
+}
+
+/**
+ * Rasterise a PDF (signed URL or data URL) to PNG data URLs for in-app viewing.
+ * Used by Wallet — phones often show a blank page for PDF iframes.
+ */
+export async function renderPdfUrlToImages(
+  url: string,
+  opts?: { maxPages?: number; scale?: number },
+): Promise<string[]> {
+  const pdfjs = await configurePdfWorker();
+  const maxPages = opts?.maxPages ?? 4;
+  const scale = opts?.scale ?? 2;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error("Could not download the boarding pass PDF.");
+  }
+  const data = new Uint8Array(await res.arrayBuffer());
+  const pdf = await pdfjs.getDocument({ data }).promise;
+  const images: string[] = [];
+  const limit = Math.min(pdf.numPages, maxPages);
+
+  for (let pageNum = 1; pageNum <= limit; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const canvasContext = canvas.getContext("2d");
+    if (!canvasContext) {
+      throw new Error("Could not draw the boarding pass.");
+    }
+    await page.render({ canvasContext, canvas, viewport }).promise;
+    images.push(canvas.toDataURL("image/jpeg", 0.92));
+  }
+
+  if (images.length === 0) {
+    throw new Error("This PDF has no pages to show.");
+  }
+  return images;
+}

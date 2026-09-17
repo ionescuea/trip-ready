@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/PageHeader";
 import { ViewOnlyBanner } from "@/components/PermissionBanners";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { renderPdfUrlToImages } from "@/lib/pdf";
 import { createClient } from "@/lib/supabase/client";
 import {
   deleteTicketFile,
@@ -39,6 +40,9 @@ export function WalletPage() {
     url: string;
     kind: "image" | "pdf";
   } | null>(null);
+  const [pdfPages, setPdfPages] = useState<string[] | null>(null);
+  const [pdfStatus, setPdfStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     if (!trip) return [];
@@ -47,6 +51,36 @@ export function WalletPage() {
       isOwner: canEditTrip,
     });
   }, [trip, myPersonId, canEditTrip]);
+
+  useEffect(() => {
+    if (!viewer || viewer.kind !== "pdf") {
+      setPdfPages(null);
+      setPdfStatus("idle");
+      setPdfError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setPdfPages(null);
+    setPdfStatus("loading");
+    setPdfError(null);
+
+    void renderPdfUrlToImages(viewer.url, { scale: 2.25, maxPages: 4 })
+      .then((pages) => {
+        if (cancelled) return;
+        setPdfPages(pages);
+        setPdfStatus("idle");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setPdfStatus("error");
+        setPdfError(e instanceof Error ? e.message : "Could not show this PDF.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewer]);
 
   const openPass = useCallback(
     async (ticket: TicketPass) => {
@@ -64,17 +98,11 @@ export function WalletPage() {
           isImageTicket(ticket) ||
           /\.(jpe?g|png|webp|gif)$/i.test(ticket.fileName);
 
-        if (asImage) {
-          setViewer({ ticket, url: res.url, kind: "image" });
-          return;
-        }
-
-        // In-app PDF iframes are blank on most phones — use the system viewer.
-        const opened = window.open(res.url, "_blank", "noopener,noreferrer");
-        setViewer({ ticket, url: res.url, kind: "pdf" });
-        if (!opened) {
-          setMsg("Allow pop-ups, or tap Open PDF on the next screen.");
-        }
+        setViewer({
+          ticket,
+          url: res.url,
+          kind: asImage ? "image" : "pdf",
+        });
       } finally {
         setBusy(false);
       }
@@ -290,12 +318,22 @@ export function WalletPage() {
             {viewer.kind === "image" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={viewer.url} alt={viewer.ticket.label} />
+            ) : pdfStatus === "loading" ? (
+              <p className="wallet-pdf-status">Preparing boarding pass…</p>
+            ) : pdfPages && pdfPages.length > 0 ? (
+              <div className="wallet-pdf-pages">
+                {pdfPages.map((src, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={`${viewer.ticket.id}-${i}`}
+                    src={src}
+                    alt={`${viewer.ticket.label} page ${i + 1}`}
+                  />
+                ))}
+              </div>
             ) : (
               <div className="wallet-pdf-fallback">
-                <p>
-                  Boarding pass PDFs open in your phone’s PDF viewer — that’s more
-                  reliable for the airport QR code.
-                </p>
+                <p>{pdfError || "Could not show this PDF in the app."}</p>
                 <a
                   className="btn btn-primary"
                   href={viewer.url}
@@ -304,9 +342,6 @@ export function WalletPage() {
                 >
                   Open PDF
                 </a>
-                <p className="muted" style={{ margin: "1rem 0 0", fontSize: "0.88rem" }}>
-                  Tip: a clear photo of the QR also works full-screen in Wallet.
-                </p>
               </div>
             )}
           </div>
