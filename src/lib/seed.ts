@@ -54,6 +54,7 @@ export function createBlankTrip(): Trip {
     bookings: [],
     checklist: {},
     luggage: {},
+    tickets: [],
     updatedAt: new Date().toISOString(),
   };
 }

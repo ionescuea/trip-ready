@@ -64,6 +64,12 @@ export function TravellerDetailPage() {
       {!editable ? (
         <ViewOnlyBanner>View only — you can’t edit this packing list.</ViewOnlyBanner>
       ) : null}
+      <div className="toolbar" style={{ marginBottom: "1rem" }}>
+        <Link href="/wallet" className="btn btn-ghost">
+          Open wallet
+        </Link>
+      </div>
+
       <div className="col">
         {canEditTrip ? (
           <section className="panel">

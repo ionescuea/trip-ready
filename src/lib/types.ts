@@ -158,7 +158,30 @@ export type Trip = {
   checklist: ChecklistState;
   /** Per-traveller luggage packing checklist */
   luggage?: LuggageState;
+  /** Boarding passes / tickets for the in-app wallet */
+  tickets?: TicketPass[];
   updatedAt: string;
+};
+
+/** A PDF or image boarding pass / ticket in the trip wallet. */
+export type TicketPass = {
+  id: string;
+  /** Display label, e.g. “easyJet boarding pass” */
+  label: string;
+  fileName: string;
+  mimeType: string;
+  /** Traveller who should see this; omit / null = whole group */
+  personId?: string | null;
+  /**
+   * Supabase Storage object path (when cloud trip is uploaded).
+   * Format: `{cloudTripId}/{ticketId}/{fileName}`
+   */
+  storagePath?: string;
+  /**
+   * Fallback when not using cloud storage — data URL (keep small; prefer images).
+   */
+  dataUrl?: string;
+  createdAt: string;
 };
 
 export type Flag = {

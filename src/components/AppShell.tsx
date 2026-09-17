@@ -44,6 +44,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       match: (p: string) => p.startsWith("/travellers") || p.startsWith("/ready"),
       icon: "pack",
     },
+    {
+      href: "/wallet",
+      label: "Wallet",
+      match: (p: string) => p.startsWith("/wallet"),
+      icon: "wallet",
+    },
   ] as const;
 
   return (
@@ -78,7 +84,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavIcon({ name }: { name: "home" | "bookings" | "leave" | "pack" }) {
+function NavIcon({
+  name,
+}: {
+  name: "home" | "bookings" | "leave" | "pack" | "wallet";
+}) {
   if (name === "home") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden>
@@ -99,6 +109,15 @@ function NavIcon({ name }: { name: "home" | "bookings" | "leave" | "pack" }) {
       <svg viewBox="0 0 24 24" aria-hidden>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v6l3.5 2" />
+      </svg>
+    );
+  }
+  if (name === "wallet") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden>
+        <path d="M3 7h18v12H3z" />
+        <path d="M3 7V5h14" />
+        <path d="M15 13h4" />
       </svg>
     );
   }

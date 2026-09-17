@@ -67,6 +67,14 @@ function MenuIcon({ name }: { name: string }) {
           <path d="M9 7V5h6v2" />
         </svg>
       );
+    case "wallet":
+      return (
+        <svg {...common}>
+          <path d="M3 7h18v12H3z" />
+          <path d="M3 7V5h14" />
+          <path d="M15 13h4" />
+        </svg>
+      );
     default:
       return (
         <svg {...common}>
@@ -145,6 +153,16 @@ export function HubPage() {
       detail: travellers.label,
       icon: "pack",
       tone: travellers.tone,
+    },
+    {
+      href: "/wallet",
+      title: "Wallet",
+      detail:
+        (trip.tickets?.length ?? 0) > 0
+          ? `${trip.tickets!.length} pass${trip.tickets!.length === 1 ? "" : "es"}`
+          : "Boarding passes",
+      icon: "wallet",
+      tone: (trip.tickets?.length ?? 0) > 0 ? ("green" as const) : ("yellow" as const),
     },
     {
       href: "/account",
@@ -233,6 +251,9 @@ export function HubPage() {
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <Link href={`/travellers/${meta.personId}`} className="btn btn-primary">
               Open my list
+            </Link>
+            <Link href="/wallet" className="btn btn-ghost">
+              Wallet
             </Link>
             <Link href="/ready" className="btn btn-ghost">
               Group readiness

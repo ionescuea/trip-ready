@@ -27,20 +27,21 @@ To go live / share across phones:
 
 1. Create a project at [supabase.com](https://supabase.com)
 2. **SQL editor** → paste and run `supabase/schema.sql`
-3. **Authentication → Providers** → enable **Email** (magic link)
-4. **Authentication → URL configuration** → add redirects:
+3. **SQL editor** → also run `supabase/ticket-storage.sql` (boarding-pass wallet files)
+4. **Authentication → Providers** → enable **Email** (magic link)
+5. **Authentication → URL configuration** → add redirects:
    - `http://localhost:3000/**`
    - `http://localhost:3000/join` (and your production `/join` URL later)
-5. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
-6. In `.env.local`:
+6. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
+7. In `.env.local`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 ```
 
-7. Restart `npm run dev`
-8. Open **Account & sync** (hub menu or top-right avatar):
+8. Restart `npm run dev`
+9. Open **Account & sync** (hub menu or top-right avatar):
    - Owner: magic-link sign-in → **Upload this trip & get invite code** → **Copy invite message** (WhatsApp/email)
    - Travellers: open the shared `/join?code=…` link → email sign-in → pick **I am** → open their checklist
 
@@ -53,6 +54,7 @@ Edits sync to the shared trip (local cache kept as backup). Realtime updates oth
 - AI extract when configured; local fallback otherwise
 - Leave-home timeline (multi-stop map + pick-ups)
 - Group readiness matrix + per-traveller packing
+- **Wallet** — upload boarding passes (PDF/photo); travellers open full-screen on their phone
 - localStorage always; Supabase when configured
 
 ## Later

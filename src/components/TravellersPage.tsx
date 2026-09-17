@@ -30,13 +30,16 @@ export function TravellersPage() {
         </ViewOnlyBanner>
       ) : null}
 
-      {canEditTrip ? (
-        <div className="toolbar">
+      <div className="toolbar">
+        {canEditTrip ? (
           <button type="button" className="btn btn-primary" onClick={addTraveller}>
             Add traveller
           </button>
-        </div>
-      ) : null}
+        ) : null}
+        <Link href="/wallet" className="btn btn-ghost">
+          Wallet
+        </Link>
+      </div>
 
       {people.length === 0 ? (
         <section className="panel">
