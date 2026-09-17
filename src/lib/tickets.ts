@@ -81,6 +81,43 @@ export function createTicketMeta(opts: {
   };
 }
 
+/** Match boarding-pass page text to a roster person (unique best match). */
+export function matchPersonFromPassText(
+  pageText: string,
+  people: { id: string; name: string }[],
+  alreadyUsed: Set<string>,
+): string | null {
+  const hay = pageText.toLowerCase();
+  if (!hay.trim() || people.length === 0) return null;
+
+  const scored: { id: string; score: number }[] = [];
+  for (const p of people) {
+    if (alreadyUsed.has(p.id)) continue;
+    const name = p.name.trim();
+    if (!name) continue;
+    const norm = name.toLowerCase();
+    let score = 0;
+    if (hay.includes(norm)) score += 10;
+    const parts = norm.split(/[\s\-]+/).filter((t) => t.length > 2);
+    for (const part of parts) {
+      if (hay.includes(part)) score += 3;
+    }
+    if (score > 0) scored.push({ id: p.id, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  if (scored.length === 0) return null;
+  if (scored.length > 1 && scored[0]!.score === scored[1]!.score) return null;
+  return scored[0]!.id;
+}
+
+export function withTicketsAdded(trip: Trip, tickets: TicketPass[]): Trip {
+  return {
+    ...trip,
+    tickets: [...ticketsOf(trip), ...tickets],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function isPdfTicket(ticket: TicketPass): boolean {
   return (
     ticket.mimeType === "application/pdf" ||

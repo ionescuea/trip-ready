@@ -101,15 +101,21 @@ export async function renderPdfUrlToImages(
   url: string,
   opts?: { maxPages?: number; scale?: number },
 ): Promise<string[]> {
-  const pdfjs = await configurePdfWorker();
-  const maxPages = opts?.maxPages ?? 4;
-  const scale = opts?.scale ?? 2;
-
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error("Could not download the boarding pass PDF.");
   }
   const data = new Uint8Array(await res.arrayBuffer());
+  return renderPdfBytesToImages(data, opts);
+}
+
+export async function renderPdfBytesToImages(
+  data: Uint8Array,
+  opts?: { maxPages?: number; scale?: number },
+): Promise<string[]> {
+  const pdfjs = await configurePdfWorker();
+  const maxPages = opts?.maxPages ?? 12;
+  const scale = opts?.scale ?? 2;
   const pdf = await pdfjs.getDocument({ data }).promise;
   const images: string[] = [];
   const limit = Math.min(pdf.numPages, maxPages);
@@ -132,4 +138,61 @@ export async function renderPdfUrlToImages(
     throw new Error("This PDF has no pages to show.");
   }
   return images;
+}
+
+export type SplitPdfPage = {
+  page: number;
+  /** JPEG of this page */
+  file: File;
+  dataUrl: string;
+  /** Text extracted from the page (for matching traveller names) */
+  text: string;
+};
+
+/** Split a boarding-pass PDF into one JPEG file per page. */
+export async function splitPdfFileToPages(
+  file: File,
+  opts?: { maxPages?: number; scale?: number },
+): Promise<SplitPdfPage[]> {
+  const pdfjs = await configurePdfWorker();
+  const maxPages = opts?.maxPages ?? 12;
+  const scale = opts?.scale ?? 2.25;
+  const data = new Uint8Array(await file.arrayBuffer());
+  const pdf = await pdfjs.getDocument({ data }).promise;
+  const limit = Math.min(pdf.numPages, maxPages);
+  const pages: SplitPdfPage[] = [];
+  const base = file.name.replace(/\.pdf$/i, "") || "boarding-pass";
+
+  for (let pageNum = 1; pageNum <= limit; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const canvasContext = canvas.getContext("2d");
+    if (!canvasContext) {
+      throw new Error("Could not draw the boarding pass.");
+    }
+    await page.render({ canvasContext, canvas, viewport }).promise;
+
+    let text = "";
+    try {
+      const content = await page.getTextContent();
+      text = pageItemsToText(content.items as TextItem[]);
+    } catch {
+      text = "";
+    }
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+    const blob = await (await fetch(dataUrl)).blob();
+    const pageFile = new File([blob], `${base}-p${pageNum}.jpg`, {
+      type: "image/jpeg",
+    });
+    pages.push({ page: pageNum, file: pageFile, dataUrl, text });
+  }
+
+  if (pages.length === 0) {
+    throw new Error("This PDF has no pages to show.");
+  }
+  return pages;
 }

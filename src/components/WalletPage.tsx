@@ -7,7 +7,7 @@ import { ViewOnlyBanner } from "@/components/PermissionBanners";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { renderPdfUrlToImages } from "@/lib/pdf";
+import { renderPdfUrlToImages, splitPdfFileToPages } from "@/lib/pdf";
 import { createClient } from "@/lib/supabase/client";
 import {
   deleteTicketFile,
@@ -18,10 +18,12 @@ import {
   createTicketMeta,
   isImageTicket,
   isPdfTicket,
+  matchPersonFromPassText,
   ticketPersonLabel,
   ticketsForViewer,
   withTicketAdded,
   withTicketRemoved,
+  withTicketsAdded,
   withTicketUpdated,
 } from "@/lib/tickets";
 import type { Person, TicketPass } from "@/lib/types";
@@ -177,15 +179,98 @@ export function WalletPage() {
     setBusy(true);
     setMsg(null);
     // Prefer ref — iOS often resets React state when returning from the file picker.
-    const assignedPersonId = assignPersonRef.current || personId || null;
+    const assignedPersonId = assignPersonRef.current || personId || "";
+    const baseLabel = label.trim() || file.name.replace(/\.[^.]+$/, "");
     try {
       const client = configured && user ? createClient() : null;
       const cloudTripId = meta?.tripId ?? null;
+      const isPdf =
+        file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+
+      // Multi-page boarding PDFs → one wallet pass per page, matched to travellers.
+      if (isPdf) {
+        setMsg("Splitting boarding pass pages…");
+        const pages = await splitPdfFileToPages(file);
+        const used = new Set<string>();
+        const created: TicketPass[] = [];
+
+        for (const page of pages) {
+          let pagePersonId: string | null = assignedPersonId || null;
+          if (!pagePersonId) {
+            pagePersonId = matchPersonFromPassText(page.text, trip.people, used);
+            if (pagePersonId) used.add(pagePersonId);
+          }
+
+          // Roster order fallback when page count matches travellers and nothing matched.
+          if (
+            !pagePersonId &&
+            !assignedPersonId &&
+            pages.length === trip.people.length &&
+            trip.people[page.page - 1]
+          ) {
+            const candidate = trip.people[page.page - 1]!.id;
+            if (!used.has(candidate)) {
+              pagePersonId = candidate;
+              used.add(candidate);
+            }
+          }
+
+          const personName = pagePersonId
+            ? trip.people.find((p) => p.id === pagePersonId)?.name.trim()
+            : null;
+          const pageLabel =
+            pages.length === 1
+              ? baseLabel
+              : personName
+                ? `${baseLabel} — ${personName}`
+                : `${baseLabel} (${page.page}/${pages.length})`;
+
+          const draft = createTicketMeta({
+            label: pageLabel,
+            fileName: page.file.name,
+            mimeType: "image/jpeg",
+            personId: pagePersonId,
+          });
+          const up = await uploadTicketFile({
+            client,
+            cloudTripId,
+            ticketId: draft.id,
+            file: page.file,
+          });
+          if (up.error) {
+            setMsg(up.error);
+            if (created.length) {
+              update((t) => withTicketsAdded(t, created));
+            }
+            return;
+          }
+          created.push({
+            ...draft,
+            storagePath: up.storagePath,
+            // Prefer cloud path; keep dataUrl only as local fallback
+            dataUrl: up.storagePath ? undefined : up.dataUrl ?? page.dataUrl,
+          });
+        }
+
+        update((t) => withTicketsAdded(t, created));
+        setLabel("");
+        const assignedCount = created.filter((t) => t.personId).length;
+        setMsg(
+          pages.length === 1
+            ? `Pass added${assignedPersonId ? "" : assignedCount ? " and matched to a traveller" : ""}.`
+            : `Split into ${pages.length} passes` +
+                (assignedCount
+                  ? ` — ${assignedCount} matched to travellers. Check assignments below.`
+                  : ". Assign each pass to a traveller below."),
+        );
+        return;
+      }
+
       const draft = createTicketMeta({
-        label: label.trim() || file.name.replace(/\.[^.]+$/, ""),
+        label: baseLabel,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        personId: assignedPersonId,
+        personId: assignedPersonId || null,
       });
       const up = await uploadTicketFile({
         client,
@@ -207,7 +292,8 @@ export function WalletPage() {
       setLabel("");
       const who =
         assignedPersonId
-          ? trip.people.find((p) => p.id === assignedPersonId)?.name.trim() || "traveller"
+          ? trip.people.find((p) => p.id === assignedPersonId)?.name.trim() ||
+            "traveller"
           : "everyone";
       setMsg(
         up.storagePath
@@ -219,6 +305,94 @@ export function WalletPage() {
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function splitExistingPdf(ticket: TicketPass) {
+    if (!canEditTrip || !trip || !isPdfTicket(ticket)) return;
+    setBusy(true);
+    setMsg("Splitting boarding pass pages…");
+    try {
+      const client = configured && user ? createClient() : null;
+      const res = await resolveTicketUrl({ client, ticket });
+      if (res.error || !res.url) {
+        setMsg(res.error || "Could not open pass.");
+        return;
+      }
+      const fetched = await fetch(res.url);
+      if (!fetched.ok) {
+        setMsg("Could not download the PDF to split.");
+        return;
+      }
+      const blob = await fetched.blob();
+      const file = new File([blob], ticket.fileName || "boarding-pass.pdf", {
+        type: "application/pdf",
+      });
+      const pages = await splitPdfFileToPages(file);
+      if (pages.length <= 1) {
+        setMsg("This PDF is only one page — nothing to split.");
+        return;
+      }
+
+      const cloudTripId = meta?.tripId ?? null;
+      const used = new Set<string>();
+      const created: TicketPass[] = [];
+      const baseLabel = ticket.label.replace(/\s*\(\d+\/\d+\)\s*$/, "").trim();
+
+      for (const page of pages) {
+        let pagePersonId = matchPersonFromPassText(page.text, trip.people, used);
+        if (pagePersonId) used.add(pagePersonId);
+        if (
+          !pagePersonId &&
+          pages.length === trip.people.length &&
+          trip.people[page.page - 1]
+        ) {
+          const candidate = trip.people[page.page - 1]!.id;
+          if (!used.has(candidate)) {
+            pagePersonId = candidate;
+            used.add(candidate);
+          }
+        }
+        const personName = pagePersonId
+          ? trip.people.find((p) => p.id === pagePersonId)?.name.trim()
+          : null;
+        const draft = createTicketMeta({
+          label: personName
+            ? `${baseLabel} — ${personName}`
+            : `${baseLabel} (${page.page}/${pages.length})`,
+          fileName: page.file.name,
+          mimeType: "image/jpeg",
+          personId: pagePersonId,
+        });
+        const up = await uploadTicketFile({
+          client,
+          cloudTripId,
+          ticketId: draft.id,
+          file: page.file,
+        });
+        if (up.error) {
+          setMsg(up.error);
+          return;
+        }
+        created.push({
+          ...draft,
+          storagePath: up.storagePath,
+          dataUrl: up.storagePath ? undefined : up.dataUrl ?? page.dataUrl,
+        });
+      }
+
+      await deleteTicketFile({ client, ticket });
+      update((t) => {
+        const without = withTicketRemoved(t, ticket.id);
+        return withTicketsAdded(without, created);
+      });
+      setMsg(
+        `Split into ${created.length} passes. Assign anyone still on Everyone below.`,
+      );
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Could not split PDF.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -246,8 +420,8 @@ export function WalletPage() {
         </ViewOnlyBanner>
       ) : (
         <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Upload boarding passes or ticket PDFs. Travellers open this page on their phone like
-          a wallet.
+          Upload boarding passes. A multi-page PDF is split into one pass per page so each
+          traveller can open only theirs.
         </p>
       )}
 
@@ -273,6 +447,10 @@ export function WalletPage() {
               disabled={busy}
               onChange={setAssignPerson}
             />
+            <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
+              Leave as Everyone for a group PDF — we’ll try to match each page to a name.
+              Or pick one person for a single pass.
+            </p>
             {trip.people.length === 0 ? (
               <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
                 No travellers yet — <Link href="/travellers">add people in Pack</Link> to assign
@@ -357,6 +535,16 @@ export function WalletPage() {
                         )
                       }
                     />
+                    {isPdfTicket(ticket) ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={busy}
+                        onClick={() => void splitExistingPdf(ticket)}
+                      >
+                        Split pages
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="btn btn-ghost"
