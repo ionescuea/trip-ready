@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Trip Ready
 
-## Getting Started
+Web-first app for **group trip readiness**: drop booking confirmations, extract the essentials, check documents/luggage per person, and work out when to leave home for the airport.
 
-First, run the development server:
+## Run it
 
 ```bash
+cd C:\Users\brand\Projects\trip-ready
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## AI extraction (recommended)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Without a key, the app uses the local heuristic parser.
 
-## Learn More
+1. Copy `.env.example` to `.env.local`
+2. Set `OPENAI_API_KEY=sk-...`
+3. Restart `npm run dev`
 
-To learn more about Next.js, take a look at the following resources:
+## Cloud sync (Supabase) — shared trip + traveller logins
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Without Supabase keys the app still works with **browser localStorage** only.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+To go live / share across phones:
 
-## Deploy on Vercel
+1. Create a project at [supabase.com](https://supabase.com)
+2. **SQL editor** → paste and run `supabase/schema.sql`
+3. **Authentication → Providers** → enable **Email** (magic link)
+4. **Authentication → URL configuration** → add redirects:
+   - `http://localhost:3000/**`
+   - `http://localhost:3000/join` (and your production `/join` URL later)
+5. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
+6. In `.env.local`:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+7. Restart `npm run dev`
+8. Open **Account & sync** (hub menu or top-right avatar):
+   - Owner: magic-link sign-in → **Upload this trip & get invite code** → **Copy invite message** (WhatsApp/email)
+   - Travellers: open the shared `/join?code=…` link → email sign-in → pick **I am** → open their checklist
+
+Edits sync to the shared trip (local cache kept as backup). Realtime updates other open devices when enabled.
+
+## What works now
+
+- Responsive web UI (desktop + phone)
+- Drag/drop or paste (`.pdf`, `.txt`, `.eml`)
+- AI extract when configured; local fallback otherwise
+- Leave-home timeline (multi-stop map + pick-ups)
+- Group readiness matrix + per-traveller packing
+- localStorage always; Supabase when configured
+
+## Later
+
+- OCR for scanned/image-only PDFs
+- Day-trip / on-location bookings page
+- Stricter per-traveller write rules (checklist-only for travellers)
+- Live traffic when `GOOGLE_MAPS_API_KEY` is set
+
+## Stack
+
+- Next.js (App Router) + TypeScript
+- OpenAI Chat Completions (optional)
+- Supabase Auth + Postgres (optional cloud)
+- localStorage cache

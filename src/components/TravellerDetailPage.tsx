@@ -1,0 +1,102 @@
+"use client";
+
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { PageHeader } from "@/components/PageHeader";
+import { OwnerEditWarning, ViewOnlyBanner } from "@/components/PermissionBanners";
+import { PersonalChecklist } from "@/components/PersonalChecklist";
+import { useTrip } from "@/context/TripContext";
+import { usePermissions } from "@/hooks/usePermissions";
+import { withPersonName } from "@/lib/personAddress";
+import { DOCUMENT_ROWS, LUGGAGE_ROWS } from "@/lib/types";
+
+export function TravellerDetailPage() {
+  const params = useParams<{ personId: string }>();
+  const { trip, toggleChecklist, toggleLuggage, update } = useTrip();
+  const { canEditPerson, canEditTrip, isEditingOther, isTraveller, myPersonId } =
+    usePermissions();
+  if (!trip) return null;
+
+  const person = trip.people.find((p) => p.id === params.personId);
+  if (!person) {
+    return (
+      <>
+        <PageHeader title="Traveller" backHref="/travellers" />
+        <section className="panel">
+          <p className="muted" style={{ margin: 0 }}>
+            Traveller not found.
+          </p>
+        </section>
+      </>
+    );
+  }
+
+  const editable = canEditPerson(person.id);
+  const ownerOther = isEditingOther(person.id);
+
+  if (isTraveller && myPersonId && person.id !== myPersonId) {
+    return (
+      <>
+        <PageHeader title={person.name} backHref="/travellers" />
+        <ViewOnlyBanner>
+          This is someone else’s packing list. Open{" "}
+          <Link href={`/travellers/${myPersonId}`}>your list</Link> to tick documents and
+          bags.
+        </ViewOnlyBanner>
+        <section className="panel" style={{ marginTop: "1rem" }}>
+          <p className="muted" style={{ margin: 0 }}>
+            View-only — you can’t change {person.name}’s checks.
+          </p>
+        </section>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader title={person.name} backHref="/travellers" />
+      {ownerOther ? <OwnerEditWarning personName={person.name} /> : null}
+      {!editable ? (
+        <ViewOnlyBanner>View only — you can’t edit this packing list.</ViewOnlyBanner>
+      ) : null}
+      <div className="col">
+        {canEditTrip ? (
+          <section className="panel">
+            <div className="panel-head">
+              <h2>Name</h2>
+            </div>
+            <label className="field">
+              <span>Traveller</span>
+              <input
+                value={person.name}
+                onChange={(e) =>
+                  update((t) => withPersonName(t, person.id, e.target.value))
+                }
+              />
+            </label>
+          </section>
+        ) : null}
+        <PersonalChecklist
+          title="Documents"
+          items={DOCUMENT_ROWS}
+          getStatus={(key) => trip.checklist[person.id]?.[key]}
+          onToggle={(key) => {
+            if (!editable) return;
+            toggleChecklist(person.id, key);
+          }}
+          disabled={!editable}
+        />
+        <PersonalChecklist
+          title="Luggage"
+          items={LUGGAGE_ROWS}
+          getStatus={(key) => trip.luggage?.[person.id]?.[key]}
+          onToggle={(key) => {
+            if (!editable) return;
+            toggleLuggage(person.id, key);
+          }}
+          disabled={!editable}
+        />
+      </div>
+    </>
+  );
+}

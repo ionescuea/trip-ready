@@ -1,0 +1,85 @@
+"use client";
+
+import { normalizeExtractedText } from "./pdfText";
+
+type TextItem = {
+  str?: string;
+  transform?: number[];
+  width?: number;
+  hasEOL?: boolean;
+};
+
+/** Rebuild PDF text using positions so dates/labels stay readable. */
+function pageItemsToText(items: TextItem[]): string {
+  const rows: { y: number; parts: { x: number; text: string }[] }[] = [];
+
+  for (const item of items) {
+    const str = item.str ?? "";
+    if (!str) continue;
+    const transform = item.transform ?? [1, 0, 0, 1, 0, 0];
+    const x = transform[4] ?? 0;
+    const y = Math.round((transform[5] ?? 0) * 10) / 10;
+
+    let row = rows.find((r) => Math.abs(r.y - y) < 3);
+    if (!row) {
+      row = { y, parts: [] };
+      rows.push(row);
+    }
+    row.parts.push({ x, text: str });
+    if (item.hasEOL) {
+      row.parts.push({ x: x + (item.width ?? 0) + 1, text: "\n" });
+    }
+  }
+
+  rows.sort((a, b) => b.y - a.y);
+
+  return rows
+    .map((row) => {
+      row.parts.sort((a, b) => a.x - b.x);
+      let line = "";
+      let lastEnd = -Infinity;
+      for (const part of row.parts) {
+        if (part.text === "\n") {
+          line += "\n";
+          lastEnd = -Infinity;
+          continue;
+        }
+        if (line && part.x - lastEnd > 1.5) line += " ";
+        line += part.text;
+        lastEnd = part.x + part.text.length * 4;
+      }
+      return line.replace(/[ \t]+/g, " ").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Extract plain text from a PDF File in the browser (PDF.js). */
+export async function extractTextFromPdf(file: File): Promise<string> {
+  const pdfjs = await import("pdfjs-dist");
+
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url,
+  ).toString();
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  const loadingTask = pdfjs.getDocument({ data });
+  const pdf = await loadingTask.promise;
+  const pages: string[] = [];
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+    const pageText = pageItemsToText(content.items as TextItem[]);
+    if (pageText.trim()) pages.push(pageText.trim());
+  }
+
+  const text = normalizeExtractedText(pages.join("\n\n"));
+  if (!text) {
+    throw new Error(
+      "No readable text in this PDF (it may be a scanned image). Paste the text or use a text-based confirmation.",
+    );
+  }
+  return text;
+}
