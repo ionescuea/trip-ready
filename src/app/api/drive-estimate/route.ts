@@ -128,24 +128,51 @@ function pointInCorridor(
   return ap + bp <= ab + maxKm * 2;
 }
 
-async function geocode(query: string): Promise<NominatimResult | null> {
+async function nominatimSearch(
+  params: Record<string, string>,
+): Promise<NominatimResult | null> {
   const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("q", query);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   url.searchParams.set("format", "json");
   url.searchParams.set("limit", "1");
   url.searchParams.set("countrycodes", "gb");
 
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "TripReady/0.1 (local prototype; contact=local-dev)",
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
+  const headers = {
+    "User-Agent": "TripReady/0.1 (local prototype; contact=local-dev)",
+    Accept: "application/json",
+  };
+
+  const res = await fetch(url, { headers, cache: "no-store" });
+
+  if (res.status === 429) {
+    await new Promise((r) => setTimeout(r, 1200));
+    const retry = await fetch(url, { headers, cache: "no-store" });
+    if (!retry.ok) return null;
+    const retryData = (await retry.json()) as NominatimResult[];
+    return retryData[0] ?? null;
+  }
 
   if (!res.ok) return null;
   const data = (await res.json()) as NominatimResult[];
   return data[0] ?? null;
+}
+
+async function geocode(query: string): Promise<NominatimResult | null> {
+  return nominatimSearch({ q: query });
+}
+
+/** Structured UK postcode lookup — more reliable than free-text for PL2 1QG etc. */
+async function geocodeUkPostcode(
+  postcode: string,
+): Promise<NominatimResult | null> {
+  const pc = postcode.replace(/\s+/g, " ").trim().toUpperCase();
+  if (!pc) return null;
+  const structured = await nominatimSearch({
+    postalcode: pc,
+    country: "United Kingdom",
+  });
+  if (structured) return structured;
+  return geocode(`${pc}, United Kingdom`);
 }
 
 /** Try several query shapes; keep distinct lat/lon hits. */
@@ -155,13 +182,29 @@ async function geocodeCandidates(
 ): Promise<NominatimResult[]> {
   const hits: NominatimResult[] = [];
   const seen = new Set<string>();
-  for (const q of addressQueryCandidates(place)) {
-    const hit = await geocode(q);
-    if (!hit) continue;
+  const add = (hit: NominatimResult | null) => {
+    if (!hit) return;
     const key = `${Number(hit.lat).toFixed(5)},${Number(hit.lon).toFixed(5)}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     hits.push(hit);
+  };
+
+  const postcode = extractUkPostcode(place);
+  if (postcode) {
+    add(await geocodeUkPostcode(postcode));
+    if (hits.length >= maxHits) return hits;
+  }
+
+  for (const q of addressQueryCandidates(place)) {
+    const norm = q.replace(/\s+/g, " ").toUpperCase();
+    if (
+      postcode &&
+      (norm === postcode || norm === `${postcode}, UNITED KINGDOM`)
+    ) {
+      continue;
+    }
+    add(await geocode(q));
     if (hits.length >= maxHits) break;
   }
   return hits;
@@ -409,10 +452,13 @@ export async function POST(request: Request) {
       label: homeAddress ? "Home" : fromTown || "Start",
     };
 
-    // Bias home geocode toward the trip’s from-town when both are set
+    // Bias home geocode toward the trip’s from-town when both are set —
+    // skip when the origin already has a UK postcode (avoids Nominatim
+    // rate-limits and bad “1Q”-style town snaps).
+    const originPostcode = extractUkPostcode(originRaw);
     let originBias: { lat: number; lon: number } | undefined;
     let townGeo: NominatimResult | null = null;
-    if (fromTown) {
+    if (fromTown && !originPostcode) {
       townGeo = pickNearestGeo(
         await geocodeCandidates(`${fromTown}, United Kingdom`, 2),
       );
@@ -420,7 +466,12 @@ export async function POST(request: Request) {
     }
 
     // Geocode home + stops first so we can order nearest-to-home, then route.
-    let originGeo = await geocodeBest(originRaw, originBias);
+    let originGeo = originPostcode
+      ? await geocodeUkPostcode(originPostcode)
+      : null;
+    if (!originGeo) {
+      originGeo = await geocodeBest(originRaw, originBias);
+    }
     let originNote: string | null = null;
     if (!originGeo && townGeo && fromTown) {
       originGeo = townGeo;

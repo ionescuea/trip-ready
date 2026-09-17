@@ -329,9 +329,8 @@ export function LeaveByPanel({
               : undefined) ||
             townFromUkAddress(trip.homePostcode ?? "") ||
             undefined,
-          homeAddress: softNormalizeUkAddress(
-            trip.homePostcode?.trim() || "",
-          ) || undefined,
+          homeAddress:
+            softNormalizeUkAddress(getDriverStartAddress(trip)) || undefined,
           toTown: toTownValue || undefined,
           parkingName: parking?.name,
           parkingAirport: parking?.airport || undefined,
