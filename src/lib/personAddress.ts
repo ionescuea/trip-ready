@@ -13,7 +13,7 @@ function firstName(name: string): string {
 
 /**
  * Rebuild traveller pick-up stops from saved people[].address.
- * Petrol / custom stops (no personId) are kept as-is.
+ * Preserves map / nearest-first order already on extraStops; petrol stays at the end.
  */
 export function reconcilePickupStops(trip: Trip): Trip {
   const driverId = getDriverPerson(trip)?.id;
@@ -21,17 +21,43 @@ export function reconcilePickupStops(trip: Trip): Trip {
   const passengers = trip.people.filter(
     (p) => p.id !== driverId && p.address?.trim(),
   );
+  const byId = new Map(passengers.map((p) => [p.id, p]));
 
-  const pickupStops: ExtraStop[] = passengers.map((person, i) => {
-    const existing = (trip.extraStops ?? []).find((s) => s.personId === person.id);
-    return {
-      id: existing?.id ?? newStopId(),
+  // Keep existing pick-up sequence (geocode sorts nearest → furthest from start)
+  const kept: ExtraStop[] = [];
+  const seen = new Set<string>();
+  for (const stop of trip.extraStops ?? []) {
+    if (!stop.personId || seen.has(stop.personId)) continue;
+    const person = byId.get(stop.personId);
+    if (!person) continue;
+    kept.push({
+      ...stop,
       label: `Pick up ${firstName(person.name)}`,
-      minutes: existing?.minutes ?? (i === 0 ? 0 : 5),
+      address: person.address!.trim(),
+    });
+    seen.add(stop.personId);
+  }
+
+  // Append newly addressed passengers (not yet on the route)
+  let nextIndex = kept.length;
+  for (const person of passengers) {
+    if (seen.has(person.id)) continue;
+    kept.push({
+      id: newStopId(),
+      label: `Pick up ${firstName(person.name)}`,
+      minutes: nextIndex === 0 ? 0 : 5,
       personId: person.id,
       address: person.address!.trim(),
-    };
-  });
+    });
+    seen.add(person.id);
+    nextIndex += 1;
+  }
+
+  // First pick-up on the ordered route: no dwell
+  const pickupStops = kept.map((stop, i) => ({
+    ...stop,
+    minutes: i === 0 ? 0 : stop.minutes > 0 ? stop.minutes : 5,
+  }));
 
   const nextStops = [...pickupStops, ...customStops];
   const prev = trip.extraStops ?? [];

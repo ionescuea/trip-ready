@@ -246,7 +246,29 @@ export function computeLeaveBy(trip: Trip): LeaveByPlan {
     if (driverId && s.personId === driverId) return false;
     return true;
   });
-  const routedStops = allExtraStops.filter((s) => stopHasAddress(trip, s));
+  const routedStopsRaw = allExtraStops.filter((s) => stopHasAddress(trip, s));
+
+  /** Prefer stop order that matches mapped leg destinations (nearest-first from estimate). */
+  const routedStops = (() => {
+    if (driveLegs.length < 2 || routedStopsRaw.length === 0) return routedStopsRaw;
+    const remaining = [...routedStopsRaw];
+    const ordered: typeof routedStopsRaw = [];
+    for (let i = 0; i < driveLegs.length - 1; i++) {
+      const to = driveLegs[i].toLabel.toLowerCase();
+      const idx = remaining.findIndex((s) => {
+        const info = pickupLabel(trip, s);
+        const name = (info.personName || info.label).toLowerCase();
+        const first = name.split(/\s+/)[0] || "";
+        return (
+          (first.length > 2 && to.includes(first)) ||
+          to.includes(info.label.toLowerCase()) ||
+          (s.address && to.includes(s.address.toLowerCase().slice(0, 8)))
+        );
+      });
+      if (idx >= 0) ordered.push(remaining.splice(idx, 1)[0]);
+    }
+    return ordered.length > 0 ? [...ordered, ...remaining] : routedStopsRaw;
+  })();
 
   // First pick-up: no dwell — be ready when the car arrives / when you leave.
   const dwellAtRoutedStop = (index: number, stop: { minutes: number }) =>

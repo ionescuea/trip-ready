@@ -66,12 +66,21 @@ function reorderStopsByWaypointOrder(
 
   for (const ow of ordered) {
     const match =
-      (ow.id ? stops.find((s) => s.id === ow.id) : undefined) ??
+      (ow.id
+        ? stops.find(
+            (s) =>
+              !used.has(s.id) && (s.id === ow.id || s.personId === ow.id),
+          )
+        : undefined) ??
       stops.find(
         (s) =>
           !used.has(s.id) &&
           (s.address?.trim() === ow.address ||
-            s.label.trim() === ow.label),
+            s.label.trim() === ow.label ||
+            (ow.label &&
+              s.label.toLowerCase().includes(
+                ow.label.replace(/^pick\s*up\s+/i, "").toLowerCase(),
+              ))),
       );
     if (match && !used.has(match.id)) {
       next.push(match);
@@ -82,7 +91,10 @@ function reorderStopsByWaypointOrder(
   for (const s of stops) {
     if (!used.has(s.id)) next.push(s);
   }
-  return next;
+  // First pick-up in map order: no dwell at the stop
+  return next.map((s, i) =>
+    s.personId ? { ...s, minutes: i === 0 ? 0 : s.minutes || 5 } : s,
+  );
 }
 
 export function LeaveByPanel({
@@ -225,7 +237,7 @@ export function LeaveByPanel({
       .join("|");
     return [
       // Bump when geocoder/routing changes so saved long legs re-estimate once
-      "drv-v5",
+      "drv-v6",
       trip.homePostcode?.trim() ?? "",
       trip.fromTown?.trim() ?? "",
       toTownValue,
