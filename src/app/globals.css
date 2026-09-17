@@ -1925,6 +1925,41 @@ body {
   max-width: 9.5rem;
 }
 
+.wallet-person-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wallet-person-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.wallet-person-chip.active {
+  border-color: var(--teal);
+  background: var(--teal-mist);
+  color: var(--teal);
+}
+
+.wallet-person-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wallet-card-actions .wallet-person-picker {
+  flex: 1 1 100%;
+}
+
 .wallet-viewer {
   position: fixed;
   inset: 0;

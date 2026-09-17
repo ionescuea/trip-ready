@@ -113,12 +113,27 @@ export function reconcileTripNames(trip: Trip): Trip {
   checklist = markBookingPresence(people, checklist, "on_flight", flight?.extracted?.people);
   checklist = markBookingPresence(people, checklist, "on_hotel", hotel?.extracted?.people);
 
+  const tickets = (trip.tickets ?? []).map((ticket) => {
+    if (!ticket.personId) return ticket;
+    const mapped = idMap[ticket.personId];
+    return mapped && mapped !== ticket.personId
+      ? { ...ticket, personId: mapped }
+      : ticket;
+  });
+
+  let driverPersonId = trip.driverPersonId;
+  if (driverPersonId && idMap[driverPersonId]) {
+    driverPersonId = idMap[driverPersonId];
+  }
+
   return withOwnerFullName({
     ...trip,
     people,
     bookings: bookingsIn,
     checklist,
     luggage,
+    tickets,
+    driverPersonId,
   });
 }
 

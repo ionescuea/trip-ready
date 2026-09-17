@@ -24,16 +24,56 @@ import {
   withTicketRemoved,
   withTicketUpdated,
 } from "@/lib/tickets";
-import type { TicketPass } from "@/lib/types";
+import type { Person, TicketPass } from "@/lib/types";
+
+const WALLET_ASSIGN_KEY = "trip-ready-wallet-assign-person";
+
+function PersonAssignPicker({
+  people,
+  value,
+  disabled,
+  onChange,
+}: {
+  people: Person[];
+  value: string;
+  disabled?: boolean;
+  onChange: (personId: string) => void;
+}) {
+  return (
+    <div className="wallet-person-picker" role="group" aria-label="Who is this for">
+      <button
+        type="button"
+        className={`wallet-person-chip${value === "" ? " active" : ""}`}
+        disabled={disabled}
+        onClick={() => onChange("")}
+      >
+        Everyone
+      </button>
+      {people.map((p) => (
+        <button
+          type="button"
+          key={p.id}
+          className={`wallet-person-chip${value === p.id ? " active" : ""}`}
+          disabled={disabled}
+          onClick={() => onChange(p.id)}
+        >
+          {p.name.trim() || "Traveller"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function WalletPage() {
   const { trip, update } = useTrip();
   const { meta, configured, user } = useCloud();
   const { canEditTrip, isTraveller, myPersonId } = usePermissions();
   const fileRef = useRef<HTMLInputElement>(null);
+  /** Survives iOS file-picker remounts better than state alone. */
+  const assignPersonRef = useRef("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [personId, setPersonId] = useState<string>("");
+  const [personId, setPersonId] = useState("");
   const [label, setLabel] = useState("");
   const [viewer, setViewer] = useState<{
     ticket: TicketPass;
@@ -43,6 +83,28 @@ export function WalletPage() {
   const [pdfPages, setPdfPages] = useState<string[] | null>(null);
   const [pdfStatus, setPdfStatus] = useState<"idle" | "loading" | "error">("idle");
   const [pdfError, setPdfError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(WALLET_ASSIGN_KEY);
+      if (saved != null) {
+        assignPersonRef.current = saved;
+        setPersonId(saved);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const setAssignPerson = useCallback((id: string) => {
+    assignPersonRef.current = id;
+    setPersonId(id);
+    try {
+      sessionStorage.setItem(WALLET_ASSIGN_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const visible = useMemo(() => {
     if (!trip) return [];
@@ -114,6 +176,8 @@ export function WalletPage() {
     if (!file || !trip || !canEditTrip) return;
     setBusy(true);
     setMsg(null);
+    // Prefer ref — iOS often resets React state when returning from the file picker.
+    const assignedPersonId = assignPersonRef.current || personId || null;
     try {
       const client = configured && user ? createClient() : null;
       const cloudTripId = meta?.tripId ?? null;
@@ -121,7 +185,7 @@ export function WalletPage() {
         label: label.trim() || file.name.replace(/\.[^.]+$/, ""),
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        personId: personId || null,
+        personId: assignedPersonId,
       });
       const up = await uploadTicketFile({
         client,
@@ -141,10 +205,14 @@ export function WalletPage() {
         }),
       );
       setLabel("");
+      const who =
+        assignedPersonId
+          ? trip.people.find((p) => p.id === assignedPersonId)?.name.trim() || "traveller"
+          : "everyone";
       setMsg(
         up.storagePath
-          ? "Pass added to the shared wallet."
-          : "Pass saved on this device. Upload the trip to the cloud so travellers can open it on their phones.",
+          ? `Pass added for ${who}.`
+          : `Pass saved on this device for ${who}. Upload the trip to the cloud so travellers can open it on their phones.`,
       );
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Upload failed.");
@@ -197,17 +265,21 @@ export function WalletPage() {
               onChange={(e) => setLabel(e.target.value)}
             />
           </label>
-          <label className="field">
+          <div className="field">
             <span>Who is this for?</span>
-            <select value={personId} onChange={(e) => setPersonId(e.target.value)}>
-              <option value="">Everyone</option>
-              {trip.people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <PersonAssignPicker
+              people={trip.people}
+              value={personId}
+              disabled={busy}
+              onChange={setAssignPerson}
+            />
+            {trip.people.length === 0 ? (
+              <p className="muted" style={{ margin: "0.35rem 0 0", fontSize: "0.88rem" }}>
+                No travellers yet — <Link href="/travellers">add people in Pack</Link> to assign
+                a pass to someone.
+              </p>
+            ) : null}
+          </div>
           <input
             ref={fileRef}
             type="file"
@@ -219,7 +291,15 @@ export function WalletPage() {
             type="button"
             className="btn btn-primary"
             disabled={busy}
-            onClick={() => fileRef.current?.click()}
+            onClick={() => {
+              assignPersonRef.current = personId;
+              try {
+                sessionStorage.setItem(WALLET_ASSIGN_KEY, personId);
+              } catch {
+                /* ignore */
+              }
+              fileRef.current?.click();
+            }}
           >
             {busy ? "Adding…" : "Upload PDF or photo"}
           </button>
@@ -265,27 +345,18 @@ export function WalletPage() {
                 </button>
                 {canEditTrip ? (
                   <>
-                    <label className="wallet-assign">
-                      <span className="sr-only">Assign to</span>
-                      <select
-                        value={ticket.personId ?? ""}
-                        disabled={busy}
-                        onChange={(e) =>
-                          update((t) =>
-                            withTicketUpdated(t, ticket.id, {
-                              personId: e.target.value || null,
-                            }),
-                          )
-                        }
-                      >
-                        <option value="">Everyone</option>
-                        {trip.people.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    <PersonAssignPicker
+                      people={trip.people}
+                      value={ticket.personId ?? ""}
+                      disabled={busy}
+                      onChange={(id) =>
+                        update((t) =>
+                          withTicketUpdated(t, ticket.id, {
+                            personId: id || null,
+                          }),
+                        )
+                      }
+                    />
                     <button
                       type="button"
                       className="btn btn-ghost"

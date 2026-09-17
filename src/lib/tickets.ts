@@ -14,10 +14,14 @@ export function ticketsForViewer(
   opts: { personId?: string | null; isOwner: boolean },
 ): TicketPass[] {
   const all = ticketsOf(trip);
+  // Owners always see every pass. Travellers without a linked profile also see all
+  // (so they aren’t locked out before Account → “I am”).
   if (opts.isOwner || !opts.personId) return all;
-  return all.filter(
-    (t) => !t.personId || t.personId === opts.personId,
-  );
+  return all.filter((t) => {
+    const assigned = t.personId?.trim();
+    if (!assigned) return true; // Everyone
+    return assigned === opts.personId;
+  });
 }
 
 export function ticketPersonLabel(trip: Trip, ticket: TicketPass): string {
