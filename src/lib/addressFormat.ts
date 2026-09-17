@@ -23,7 +23,16 @@ export function softNormalizeUkAddress(value: string): string {
   // Standard outward + inward postcode spacing
   v = v.replace(/\b([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})\b/gi, "$1 $2");
 
-  return v.replace(/\s+/g, " ").trim();
+  // Comma before postcode: “Plymouth PL2 1QG” → “Plymouth, PL2 1QG”
+  v = v.replace(/\s+([A-Z]{1,2}\d[A-Z\d]?\s+\d[A-Z]{2})\b/i, ", $1");
+
+  // Comma after street type when town follows: “Kent Road Plymouth,” → “Kent Road, Plymouth,”
+  v = v.replace(
+    /\b(Road|Street|Lane|Avenue|Close|Drive|Way|Hill|Grove|Terrace|Crescent|Walk|Place|Gardens?)\s+([A-Z][a-z]{2,})\s*,/i,
+    "$1, $2,",
+  );
+
+  return v.replace(/\s+/g, " ").replace(/,\s*,+/g, ",").trim();
 }
 
 /** Best-effort town/city from a UK street address (for map bias). */

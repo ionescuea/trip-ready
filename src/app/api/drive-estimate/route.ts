@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { softNormalizeUkAddress } from "@/lib/addressFormat";
 import { resolveAirportQuery } from "@/lib/airports";
 
 export const runtime = "nodejs";
@@ -39,12 +40,7 @@ function addressQueryCandidates(place: string): string[] {
   const raw = place.trim();
   if (!raw) return [];
 
-  // Soft-normalize jammed postcodes (PL21QG → PL2 1QG)
-  const spaced = raw
-    .replace(/\s+/g, " ")
-    .replace(/\b([A-Z]{1,2}\d[A-Z\d]?)(\d[A-Z]{2})\b/gi, "$1 $2")
-    .trim();
-
+  const spaced = softNormalizeUkAddress(raw);
   const noCountry = spaced
     .replace(/\bUnited Kingdom\b/gi, "")
     .replace(/\bUK\b/gi, "")
@@ -56,11 +52,14 @@ function addressQueryCandidates(place: string): string[] {
   const postcode = extractUkPostcode(spaced) || extractUkPostcode(raw);
   const candidates: string[] = [];
 
-  // Prefer the full street address first. Bare postcode alone can snap to the
-  // wrong town centroid and inflate multi-stop drive times overnight.
+  // Comma-formatted full address first, then postcode (reliable), then looser forms
   if (noCountry) candidates.push(noCountry);
   if (noCountry && !/united kingdom/i.test(noCountry)) {
     candidates.push(`${noCountry}, United Kingdom`);
+  }
+  if (postcode) {
+    candidates.push(`${postcode}, United Kingdom`);
+    candidates.push(postcode);
   }
   // Street + city only (drop postcode) — helps when postcode is mistyped
   if (postcode && noCountry) {
@@ -73,10 +72,6 @@ function addressQueryCandidates(place: string): string[] {
       candidates.push(withoutPc);
       candidates.push(`${withoutPc}, United Kingdom`);
     }
-  }
-  if (postcode) {
-    candidates.push(`${postcode}, United Kingdom`);
-    candidates.push(postcode);
   }
   candidates.push(spaced);
   candidates.push(raw);
@@ -423,10 +418,18 @@ export async function POST(request: Request) {
 
     // Geocode home + stops first so we can order nearest-to-home, then route.
     let originGeo = await geocodeBest(originRaw, originBias);
+    let originNote: string | null = null;
+    if (!originGeo && townGeo && fromTown) {
+      originGeo = townGeo;
+      originNote = `Couldn't pin the exact start street — routing from ${fromTown}. A postcode alone is usually enough.`;
+    }
     if (!originGeo) {
+      const pc = extractUkPostcode(originRaw);
       return NextResponse.json(
         {
-          error: `Could not find “${originRaw}”. Try a fuller address or postcode.`,
+          error: pc
+            ? `The map couldn't locate that start address. Try the postcode on its own (${pc}), or write it with commas — e.g. 41 Kent Road, Plymouth ${pc}.`
+            : `The map couldn't locate that start address. Add a UK postcode (e.g. PL2 1QG).`,
         },
         { status: 404 },
       );
@@ -435,8 +438,7 @@ export async function POST(request: Request) {
     // If the start address snapped far from the trip’s from-town (e.g. wrong
     // postcode / placeholder city), route from the town instead — otherwise
     // leave-home jumps back many hours.
-    let originNote: string | null = null;
-    if (originBias && townGeo) {
+    if (originBias && townGeo && !originNote) {
       const snapKm = haversineKm(parseGeo(originGeo), originBias);
       if (snapKm > 60) {
         originGeo = townGeo;
@@ -487,7 +489,7 @@ export async function POST(request: Request) {
       if (!geo) {
         return NextResponse.json(
           {
-            error: `Could not find stop “${w.label}” at “${w.address}”. Try a fuller address or postcode.`,
+            error: `The map couldn't locate pick-up “${w.label}” (${w.address}). Check the postcode on their packing page.`,
           },
           { status: 404 },
         );
