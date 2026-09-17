@@ -1,12 +1,35 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { extractTextFromPdf } from "@/lib/pdf";
 
 type Props = {
   onText: (text: string, sourceName: string) => void | Promise<void>;
   busy?: boolean;
 };
+
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  // Hide opaque engine messages like: undefined is not a function (near '...t of e...')
+  if (
+    /undefined is not a function/i.test(raw) ||
+    /is not a function \(near/i.test(raw) ||
+    /is not iterable/i.test(raw)
+  ) {
+    return "Could not read that file on this phone. Try again, or paste the confirmation email text below.";
+  }
+  return raw || "Could not read that file.";
+}
+
+async function readPdfViaServer(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/pdf-text", { method: "POST", body: form });
+  const data = (await res.json()) as { text?: string; error?: string };
+  if (!res.ok || !data.text?.trim()) {
+    throw new Error(data.error || "Could not read that PDF.");
+  }
+  return data.text;
+}
 
 export function DropZone({ onText, busy = false }: Props) {
   const [dragging, setDragging] = useState(false);
@@ -26,7 +49,8 @@ export function DropZone({ onText, busy = false }: Props) {
         if (file.type.startsWith("text/") || name.endsWith(".eml") || name.endsWith(".txt")) {
           text = await file.text();
         } else if (file.type === "application/pdf" || name.toLowerCase().endsWith(".pdf")) {
-          text = await extractTextFromPdf(file);
+          // Server-side extract — mobile Chrome/PDF.js workers are unreliable
+          text = await readPdfViaServer(file);
         } else {
           try {
             text = await file.text();
@@ -40,7 +64,7 @@ export function DropZone({ onText, busy = false }: Props) {
         }
         await onText(text, name);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not read that PDF.");
+        setError(friendlyError(err));
       } finally {
         setReading(false);
       }
@@ -110,9 +134,7 @@ export function DropZone({ onText, busy = false }: Props) {
             try {
               await onText(value, "pasted-email.txt");
             } catch (err) {
-              setError(
-                err instanceof Error ? err.message : "Could not extract that text.",
-              );
+              setError(friendlyError(err));
             }
           })();
         }}
