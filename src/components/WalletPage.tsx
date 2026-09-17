@@ -88,9 +88,19 @@ function PersonFilterPicker({
   disabled?: boolean;
   onChange: (personId: string) => void;
 }) {
+  // People with passes first so they’re easy to find on a small screen
+  const ordered = [...people].sort((a, b) => {
+    const ca = counts[a.id] ?? 0;
+    const cb = counts[b.id] ?? 0;
+    if (cb !== ca) return cb - ca;
+    return (a.name.trim() || "").localeCompare(b.name.trim() || "", undefined, {
+      sensitivity: "base",
+    });
+  });
+
   return (
     <div className="wallet-person-picker" role="group" aria-label="Traveller">
-      {people.map((p) => {
+      {ordered.map((p) => {
         const n = counts[p.id] ?? 0;
         return (
           <button

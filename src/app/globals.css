@@ -2004,14 +2004,10 @@ body {
 
 .wallet-person-picker {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.5rem;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-  padding: 0.15rem 0.1rem 0.35rem;
-  margin: 0 -0.15rem;
-  scroll-snap-type: x proximity;
+  padding: 0.15rem 0;
+  margin: 0;
 }
 
 .wallet-person-chip {
@@ -2027,11 +2023,12 @@ body {
   min-height: 2.75rem;
   border-radius: 999px;
   cursor: pointer;
-  line-height: 1.2;
-  flex: 0 0 auto;
-  scroll-snap-align: start;
+  line-height: 1.25;
+  flex: 1 1 auto;
+  max-width: 100%;
   touch-action: manipulation;
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
 }
 
 .wallet-person-chip.active {
