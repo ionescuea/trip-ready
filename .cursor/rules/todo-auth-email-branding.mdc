@@ -1,0 +1,20 @@
+---
+description: Reminder — brand Supabase magic-link emails as Trip Ready
+alwaysApply: true
+---
+
+# TODO: Trip Ready auth email branding
+
+Deferred by the user (Sep 2026). Remind them when auth, Account, magic links, or invites come up.
+
+## Goal
+Magic-link emails currently show **Supabase Auth** as sender and a “powered by Supabase” footer. Travellers won’t recognise that — change to **Trip Ready**.
+
+## How (when they have time)
+1. Supabase → **Authentication → Email Templates → Magic Link** — Trip Ready subject/body (keep `{{ .ConfirmationURL }}`).
+2. Supabase → **Authentication → SMTP** — custom SMTP (Resend/SendGrid/etc.) with **Sender name:** `Trip Ready` and a verified from-address. Required to change the inbox From name and drop default branding; also raises email rate limits.
+
+## Why this matters soon
+Custom SMTP also fixes the painful **email rate limit** (built-in mailer allows only a few magic links per hour — easy to hit while testing).
+
+Do not implement custom SMTP in code until the user asks to return to this.

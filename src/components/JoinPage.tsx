@@ -9,6 +9,7 @@ import { useTrip } from "@/context/TripContext";
 import { createClient } from "@/lib/supabase/client";
 import { joinCloudTrip, lookupInvite } from "@/lib/tripCloud";
 import { publicAppOrigin } from "@/lib/appUrl";
+import { formatAuthError } from "@/lib/authErrors";
 
 export function JoinPage() {
   const router = useRouter();
@@ -71,9 +72,9 @@ export function JoinPage() {
   }, [configured, code, user, meta, people.length]);
 
   async function sendLink() {
+    if (linkSent) return;
     setBusy(true);
     setError(null);
-    setLinkSent(false);
     const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
     const redirectTo = origin
       ? `${origin}/join?code=${encodeURIComponent(code.trim().toUpperCase())}`
@@ -81,7 +82,7 @@ export function JoinPage() {
     const res = await signInWithEmail(email, redirectTo);
     setBusy(false);
     if (res.error) {
-      setError(res.error);
+      setError(formatAuthError(res.error));
       return;
     }
     setLinkSent(true);
@@ -192,21 +193,24 @@ export function JoinPage() {
               type="email"
               value={email}
               placeholder="you@example.com"
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setLinkSent(false);
+              }}
             />
           </label>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !email.trim() || code.trim().length < 4}
+            disabled={busy || linkSent || !email.trim() || code.trim().length < 4}
             onClick={() => void sendLink()}
           >
-            {busy ? "Sending…" : "Email me a link"}
+            {busy ? "Sending…" : linkSent ? "Link sent" : "Email me a link"}
           </button>
           {linkSent ? (
             <p className="estimate-msg">
-              Check your inbox (and spam). Open the link on this phone, then come back
-              here if needed.
+              Check your inbox (and spam). Open the link on this phone — don’t tap
+              again; that burns the hourly email limit.
             </p>
           ) : null}
         </section>

@@ -1,0 +1,19 @@
+---
+description: Reminder — send trip invites from Account (in-app), not copy/WhatsApp
+alwaysApply: true
+---
+
+# TODO: In-app invite sending
+
+Deferred by the user (Sep 2026). Current flow is OK short-term: Account → Copy invite / Copy code → paste into WhatsApp or email.
+
+## Goal
+From the Account (organiser) invite window, send the invite directly — e.g. enter traveller email(s) and tap Send — without leaving the app for a separate mail client or WhatsApp.
+
+## Likely approach (when they ask to build it)
+- Organiser enters one or more emails on Account
+- App sends a Trip Ready–branded invite email with join link + code (Resend/SendGrid/Supabase Edge Function or similar)
+- Reuse public invite URL from `publicAppOrigin()` + `/join?code=…`
+- Ties in with auth email branding / custom SMTP work (see `todo-auth-email-branding.mdc`)
+
+Do not implement until the user asks to return to this.

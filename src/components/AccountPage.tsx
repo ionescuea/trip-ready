@@ -12,6 +12,7 @@ import { loadTrip } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
 import { createCloudTrip, setMemberPerson } from "@/lib/tripCloud";
 import { publicAppOrigin } from "@/lib/appUrl";
+import { formatAuthError } from "@/lib/authErrors";
 
 export function AccountPage() {
   const router = useRouter();
@@ -22,6 +23,7 @@ export function AccountPage() {
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
 
   useEffect(() => {
     const join = search.get("join");
@@ -86,15 +88,17 @@ export function AccountPage() {
   }
 
   async function sendMagicLink() {
+    if (linkSent) return;
     setBusy(true);
     setMsg(null);
     const res = await signInWithEmail(email);
     setBusy(false);
     if (res.error) {
-      setMsg(res.error);
+      setMsg(formatAuthError(res.error));
       return;
     }
-    setMsg("Check your email — open the link on this device.");
+    setLinkSent(true);
+    setMsg("Link sent — check your inbox (and spam). Don’t tap again; that burns the hourly limit.");
   }
 
   async function startTrip() {
@@ -191,16 +195,19 @@ export function AccountPage() {
               type="email"
               value={email}
               placeholder="you@example.com"
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setLinkSent(false);
+              }}
             />
           </label>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !email.trim()}
+            disabled={busy || linkSent || !email.trim()}
             onClick={() => void sendMagicLink()}
           >
-            {busy ? "Sending…" : "Email me a link"}
+            {busy ? "Sending…" : linkSent ? "Link sent" : "Email me a link"}
           </button>
           <p className="muted" style={{ margin: "1rem 0 0" }}>
             Have an invite? <Link href="/join">Join a trip</Link>
