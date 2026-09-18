@@ -328,6 +328,10 @@ body {
   border-color: #c5dde0;
 }
 
+.panel-head {
+  margin-bottom: 0.85rem;
+}
+
 .panel-head h2 {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
@@ -335,10 +339,11 @@ body {
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);
+  line-height: 1.25;
 }
 
 .panel-head p {
-  margin: 0.35rem 0 0.95rem;
+  margin: 0.35rem 0 0;
   color: var(--muted);
   font-size: 0.9rem;
   line-height: 1.45;
@@ -1268,6 +1273,9 @@ body {
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
@@ -1276,6 +1284,7 @@ body {
   font: inherit;
   font-weight: 650;
   cursor: pointer;
+  text-decoration: none;
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 

@@ -90,6 +90,7 @@ export function JoinPage() {
         <section className="panel">
           <div className="panel-head">
             <h2>You’re in</h2>
+            <p>Your packing list and readiness ticks are ready.</p>
           </div>
           <Link href={`/travellers/${meta.personId}`} className="btn btn-primary">
             Open my checklist
