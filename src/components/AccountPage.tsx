@@ -9,6 +9,7 @@ import { useTrip } from "@/context/TripContext";
 import { findOwnerPerson, OWNER_FULL_NAME, withOwnerFullName } from "@/lib/cloudMeta";
 import { createClient } from "@/lib/supabase/client";
 import { createCloudTrip, setMemberPerson } from "@/lib/tripCloud";
+import { isLocalDevOrigin, publicAppOrigin } from "@/lib/appUrl";
 
 export function AccountPage() {
   const router = useRouter();
@@ -48,8 +49,10 @@ export function AccountPage() {
   }, [trip?.people, meta?.tripId, meta?.role, user?.id]);
 
   const inviteUrl = useMemo(() => {
-    if (!meta?.inviteCode || typeof window === "undefined") return "";
-    return `${window.location.origin}/join?code=${meta.inviteCode}`;
+    if (!meta?.inviteCode) return "";
+    const origin = publicAppOrigin();
+    if (!origin) return "";
+    return `${origin}/join?code=${meta.inviteCode}`;
   }, [meta?.inviteCode]);
 
   const shareMessage = useMemo(() => {
@@ -216,6 +219,12 @@ export function AccountPage() {
                 </p>
                 {meta.role !== "traveller" ? (
                   <>
+                    {isLocalDevOrigin() ? (
+                      <p className="estimate-msg" style={{ margin: "0.65rem 0 0" }}>
+                        You’re on localhost — invite links still point at the live site
+                        so travellers can open them on their phones.
+                      </p>
+                    ) : null}
                     <p className="muted" style={{ margin: "0.5rem 0 0", wordBreak: "break-all" }}>
                       {inviteUrl}
                     </p>
