@@ -264,8 +264,8 @@ export function DayTripsPage() {
               <h2>Add a day trip</h2>
             </div>
             <p className="muted" style={{ margin: "0 0 0.75rem" }}>
-              Paste a TUI / Musement confirmation email (Acropolis, cruise, Meteora, food
-              tour…).
+              Paste the confirmation email text, or upload a PDF / .eml from your phone. One
+              file per tour works best.
             </p>
             <DropZone onText={ingest} busy={extracting} />
           </section>

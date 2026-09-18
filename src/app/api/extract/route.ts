@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { EXTRACT_SYSTEM_PROMPT, normalizeAiBookings } from "@/lib/aiExtract";
-import { extractAllFromText } from "@/lib/extract";
+import { extractAllFromText, looksLikeExperienceBooking } from "@/lib/extract";
 
 export const runtime = "nodejs";
 
@@ -25,6 +25,15 @@ export async function POST(request: Request) {
 
     // Cap very large pastes
     const clipped = text.length > 60_000 ? text.slice(0, 60_000) : text;
+
+    // TUI / Musement day trips: dedicated local parser is more reliable than AI
+    // on phone-saved email PDFs (and avoids OpenAI 429s when uploading several).
+    if (looksLikeExperienceBooking(clipped)) {
+      return heuristic(
+        clipped,
+        "Day trip read with the built-in TUI reader (best for phone PDF uploads).",
+      );
+    }
 
     const apiKey = process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) {

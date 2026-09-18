@@ -602,12 +602,54 @@ function extractParking(text: string, notes: string[]): ExtractResult {
 
 function isExperienceConfirmation(text: string): boolean {
   const t = text.toLowerCase();
+  const looksTui =
+    /enjoy your experience|tui musement|tui-experiences|tuimusement|musement/i.test(
+      t,
+    ) ||
+    (/guided tour|day trip|street food|full-day cruise|acropolis|meteora|parthenon/i.test(
+      t,
+    ) &&
+      /ticket info|meeting point|order is complete|download (?:your )?(?:voucher|ticket)/i.test(
+        t,
+      ));
   return (
-    (/enjoy your experience|tui musement|tui-experiences|tuimusement/i.test(t) ||
-      /guided tour|day trip|street food|full-day cruise|meeting point/i.test(t)) &&
-    /ticket info|download (?:your )?(?:voucher|ticket)|order is complete/i.test(t) &&
-    !/boarding pass|flight reference|car park|holiday reference/i.test(t)
+    looksTui &&
+    !/boarding pass|flight reference|car park|holiday reference|park and go/i.test(t)
   );
+}
+
+/** Exported for the extract API — phone PDFs should skip OpenAI for these. */
+export function looksLikeExperienceBooking(text: string): boolean {
+  return isExperienceConfirmation(normalizeExtractedText(text));
+}
+
+/** Flatten Yahoo/TUI PDF quirks so DATE / title / meeting point survive. */
+function prepExperienceText(raw: string): string {
+  return normalizeExtractedText(raw)
+    .replace(/\r/g, "\n")
+    .replace(/<\/?[^>]+>/g, " ")
+    .replace(/&nbsp;|&#\d+;/gi, " ")
+    .replace(/Yahoo Mail:.*$/gim, "")
+    .replace(/Message\. For JAWS.*$/gim, "")
+    .replace(/Open in Google Maps/gi, "\n")
+    .replace(/Download (?:your )?(?:voucher|ticket)/gi, "\n")
+    .replace(/Present your (?:voucher|ticket)[^\n]*/gi, "\n")
+    .replace(/You don't need to print[^\n]*/gi, "\n")
+    .replace(/Remember to print[^\n]*/gi, "\nRemember to print the voucher\n")
+    // Soft hyphen / broken words common in PDF extract
+    .replace(/(\w)-\n(\w)/g, "$1$2")
+    // Label then value on the next line
+    .replace(/Enjoy your experience\s*[-–—:]?\s*\n+/gi, "Enjoy your experience - ")
+    .replace(/Confirmed!\s*Enjoy your experience\s*[-–—:]?\s*\n+/gi, "Enjoy your experience - ")
+    .replace(/\bDATE:\s*\n+/gi, "DATE: ")
+    .replace(/\bDate:\s*\n+/gi, "DATE: ")
+    .replace(/Meeting point:?\s*\n+/gi, "Meeting point: ")
+    .replace(/Ticket info:\s*\n+/gi, "Ticket info: ")
+    .replace(/Included:\s*\n+/gi, "Included:\n")
+    .replace(/Not included:\s*\n+/gi, "Not included:\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Parse “Monday, 21 Sep 2026, 3:00 PM” / “Thursday, 24 Sep 2026, 8:00 AM”. */
@@ -632,6 +674,15 @@ function parseExperienceDateTime(raw: string): { date?: string; time?: string } 
       time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
     };
   }
+  // 08:00am / 9:00AM stuck to the date
+  const ampmTight = s.match(
+    /^(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}),?\s+(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/i,
+  );
+  if (ampmTight) {
+    return parseExperienceDateTime(
+      `${ampmTight[1]}, ${ampmTight[2]}:${ampmTight[3]} ${/p/i.test(ampmTight[4]!) ? "PM" : "AM"}`,
+    );
+  }
   const d = parseFlexibleDate(s);
   if (!d) return {};
   const hasTime = /\d{1,2}:\d{2}/.test(s);
@@ -643,79 +694,150 @@ function parseExperienceDateTime(raw: string): { date?: string; time?: string } 
   };
 }
 
-function extractExperience(text: string, notes: string[]): ExtractResult {
-  const name =
-    findMatch(text, [
-      /Enjoy your experience\s*[-–—]\s*([^\n]{5,120})/i,
-      /Subject:\s*Confirmed!\s*Enjoy your experience\s*[-–—]\s*([^\n]{5,120})/i,
-      /(?:^|\n)([^\n]{5,100})\n\1/i, // duplicated tour title in Musement emails
-    ])?.replace(/\s+/g, " ").trim() || "Day trip / experience";
-
-  const whenRaw = findMatch(text, [
-    /DATE:\s*([^\n]{8,80})/i,
-    /Date:\s*([^\n]{8,80})/i,
+function findExperienceWhen(text: string): { date?: string; time?: string } {
+  const labeled = findMatch(text, [
+    /DATE:\s*([^\n]{8,90})/i,
+    /Date:\s*([^\n]{8,90})/i,
   ]);
-  const when = whenRaw ? parseExperienceDateTime(whenRaw) : {};
+  if (labeled) {
+    const parsed = parseExperienceDateTime(labeled);
+    if (parsed.date) return parsed;
+  }
+  // PDF often drops the DATE: label — find weekday + month date + time anywhere
+  const loose = text.match(
+    /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}),?\s+(\d{1,2}:\d{2}\s*(?:AM|PM|a\.?m\.?|p\.?m\.?)?)/i,
+  );
+  if (loose) {
+    return parseExperienceDateTime(`${loose[1]}, ${loose[2]}`);
+  }
+  const loose2 = text.match(
+    /\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}),?\s+(\d{1,2}:\d{2}\s*(?:AM|PM))/i,
+  );
+  if (loose2) {
+    return parseExperienceDateTime(`${loose2[1]}, ${loose2[2]}`);
+  }
+  return {};
+}
 
+function findExperienceTitle(text: string): string | undefined {
+  const fromSubject = findMatch(text, [
+    /Enjoy your experience\s*[-–—:]\s*([^\n]{8,140})/i,
+    /Subject:\s*Confirmed!\s*Enjoy your experience\s*[-–—:]\s*([^\n]{8,140})/i,
+    /Confirmed!\s*Enjoy your experience\s*[-–—:]\s*([^\n]{8,140})/i,
+  ]);
+  if (fromSubject) {
+    return fromSubject
+      .replace(/\s+/g, " ")
+      .replace(/\s*(?:Greece\s*2026|Ticket info|Hi\s).*$/i, "")
+      .trim();
+  }
+  // Duplicated title lines (Musement)
+  const dup = text.match(/(?:^|\n)([A-Z][^\n]{10,100})\n\1(?:\n|$)/);
+  if (dup?.[1] && !/ticket info|included|meeting point|cancellation/i.test(dup[1])) {
+    return dup[1].replace(/\s+/g, " ").trim();
+  }
+  // Keyword fallbacks when PDF loses the subject line
+  if (/acropolis|parthenon/i.test(text) && /museum|guided/i.test(text)) {
+    return "Guided tour of the Acropolis, Parthenon and Museum in Athens";
+  }
+  if (/street food/i.test(text) && /athens/i.test(text)) {
+    return "Street food of Athens small group tour";
+  }
+  if (/meteora/i.test(text) && /day trip|athens/i.test(text)) {
+    return "Meteora Day Trip From Athens";
+  }
+  if (/cruise/i.test(text) && /swim|athens/i.test(text)) {
+    return "Athens full-day cruise with swim stops and lunch";
+  }
+  return undefined;
+}
+
+function findExperienceMeeting(text: string): string | undefined {
   let meeting = findMatch(text, [
-    /Meeting point\s*(?:<\/?p>)?\s*([^<\n]{5,120})/i,
-    /Meeting point:\s*([^\n]{5,120})/i,
-    /Where:\s*Location[^\n]*Meeting point:\s*([^\n]{5,120})/i,
+    /Meeting point:\s*([^\n]{5,140})/i,
+    /Meeting point\s+([A-Za-z0-9][^\n]{4,140})/i,
+    /Where:\s*[^\n]*Meeting point:\s*([^\n]{5,140})/i,
   ]);
   meeting = meeting
     ?.replace(/<\/?p>/gi, "")
     .replace(/Open in Google Maps.*/i, "")
+    .replace(/\s+/g, " ")
     .trim();
+  if (meeting && meeting.length > 4) return meeting;
 
-  const tickets = findMatch(text, [
-    /(\d+\s*x\s+[^\n]{3,60})/i,
-  ]);
+  // Well-known Athens meet spots when label is lost in PDF order
+  const known = text.match(
+    /\b((?:Mitsaion\s*\d+|Larissa Station|Syntagma Square)[^.\n]{0,60}(?:,\s*Athens[^.\n]{0,40})?)/i,
+  );
+  return known?.[1]?.replace(/\s+/g, " ").trim();
+}
 
-  const lead = findMatch(text, [/Hi\s+([A-Za-z][A-Za-z\- ]{1,60}),/i]);
+function extractExperience(text: string, notes: string[]): ExtractResult {
+  const src = prepExperienceText(text);
 
-  const includedBlock = text.match(
+  const name = findExperienceTitle(src) || "Day trip / experience";
+  const when = findExperienceWhen(src);
+  const meeting = findExperienceMeeting(src);
+
+  const tickets = findMatch(src, [
+    /(\d+\s*x\s+[^\n]{3,120})/i,
+  ])?.replace(/\s+/g, " ").trim();
+
+  const lead = findMatch(src, [/Hi\s+([A-Za-z][A-Za-z\- ]{1,60}),/i]);
+
+  const includedBlock = src.match(
     /Included:\s*([\s\S]*?)(?:Not included:|Where:|Meeting point|What to remember|Cancellation policy|$)/i,
   )?.[1];
-  const notIncludedBlock = text.match(
+  const notIncludedBlock = src.match(
     /Not included:\s*([\s\S]*?)(?:Where:|Meeting point|What to remember|Cancellation policy|$)/i,
   )?.[1];
 
   const cleanBullets = (block?: string) =>
     (block ?? "")
-      .replace(/Check Mark Icon[^\n]*/gi, "")
+      .replace(/Check Mark Icon[-\s]*/gi, "")
+      .replace(/Location Target Icon[-\s]*/gi, "")
+      .replace(/Checkbox Icon[-\s]*/gi, "")
       .replace(/<\/?[^>]+>/g, " ")
       .split(/\n+/)
       .map((l) => l.replace(/^[\s\-•*]+/, "").trim())
-      .filter((l) => l.length > 2 && l.length < 80)
-      .slice(0, 10);
+      .filter(
+        (l) =>
+          l.length > 2 &&
+          l.length < 100 &&
+          !/^(included|not included|where|meeting point)$/i.test(l),
+      )
+      .slice(0, 12);
 
   const included = cleanBullets(includedBlock);
   const notIncluded = cleanBullets(notIncludedBlock);
 
   const remember: string[] = [];
-  if (/print the voucher|Remember to print/i.test(text)) {
+  if (/print the voucher|Remember to print/i.test(src)) {
     remember.push("Print the voucher (not phone-only).");
-  } else if (/smartphone|Don't need to print|do not need to print/i.test(text)) {
+  } else if (/smartphone|Don't need to print|do not need to print/i.test(src)) {
     remember.push("Phone voucher is enough — no print needed.");
   }
-  if (/without transportation|no hotel pick-up|Not included:[\s\S]*Hotel pick-up/i.test(text)) {
+  if (/without transportation|Hotel pick-up\/drop-off|no hotel pick-up/i.test(src)) {
     remember.push("No hotel transfer — make your own way to the meeting point.");
   }
-  if (/arrive .*15 minutes|at least 15 minutes/i.test(text)) {
+  if (/arrive .*15 minutes|at least 15 minutes/i.test(src)) {
     remember.push("Arrive at least 15 minutes early.");
   }
-  if (/wait for 5 minutes|only wait for 5/i.test(text)) {
+  if (/wait for 5 minutes|only wait for 5/i.test(src)) {
     remember.push("Guide waits only 5 minutes.");
   }
-  if (/skirt|monaster|dress appropriately/i.test(text)) {
-    remember.push("Dress code for monasteries — cover knees/shoulders; bring cash for entry fees.");
+  if (/skirt|monaster|dress appropriately/i.test(src)) {
+    remember.push(
+      "Dress code for monasteries — cover knees/shoulders; bring cash for entry fees.",
+    );
   }
-  if (/€\s*5|5 euros/i.test(text)) {
+  if (/€\s*5|5 euros/i.test(src)) {
     remember.push("Monastery entry ~€5 pp each, cash locally.");
   }
-  const contact = findMatch(text, [
-    /contact the local operator at:\s*([^\n]{5,80})/i,
-    /local provider at\s*(\+?[\d\s]{8,20})/i,
+  const contact = findMatch(src, [
+    /contact the local operator at:\s*([^\n]{5,100})/i,
+    /local provider at\s*(\+?[\d\s]{8,22})/i,
+    /(info@[a-z0-9.-]+\.[a-z]{2,})/i,
   ]);
   if (contact) remember.push(`Local: ${contact}`);
 
@@ -738,8 +860,11 @@ function extractExperience(text: string, notes: string[]): ExtractResult {
 
   if (!when.date) notes.push("Experience date unclear — check the confirmation.");
   if (!meeting) notes.push("Meeting point not found — check the voucher.");
+  if (name === "Day trip / experience") {
+    notes.push("Tour title unclear — edit the name from your voucher.");
+  }
 
-  const filled = [fields.name, fields.startDate, fields.startTime, fields.locationRelative].filter(
+  const filled = [fields.name !== "Day trip / experience" ? fields.name : "", fields.startDate, fields.startTime, fields.locationRelative].filter(
     Boolean,
   ).length;
   return {
