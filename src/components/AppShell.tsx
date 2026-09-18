@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <p className="brand-name">Trip Ready</p>
         </Link>
-        <Link href="/account" className="avatar" title="Account & sync">
+        <Link href="/account" className="avatar" title="Account">
           {initials}
         </Link>
       </div>

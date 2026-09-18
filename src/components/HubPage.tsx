@@ -182,7 +182,7 @@ export function HubPage() {
     },
     {
       href: "/account",
-      title: "Account & sync",
+      title: "Account",
       detail: meta?.inviteCode ? `Code ${meta.inviteCode}` : "Cloud sync",
       icon: "pack",
       tone: "yellow" as const,
@@ -232,29 +232,27 @@ export function HubPage() {
       {!meta ? (
         <section className="hub-invite-banner" style={{ marginTop: "1.25rem" }}>
           <p>
-            <strong>Got an invite code?</strong> Join the shared trip in a few taps.
+            <strong>Share or join</strong> — save this trip to the cloud, or join with a
+            code.
           </p>
           <div className="toolbar" style={{ marginBottom: 0 }}>
-            <Link href="/join" className="btn btn-primary">
-              Join with code
+            <Link href="/account" className="btn btn-primary">
+              Account
             </Link>
-            <Link href="/account" className="btn btn-ghost">
-              Or share this trip
+            <Link href="/join" className="btn btn-ghost">
+              Join with code
             </Link>
           </div>
         </section>
       ) : meta.role === "owner" || !meta.role ? (
         <section className="hub-invite-banner" style={{ marginTop: "1.25rem" }}>
           <p>
-            <strong>Invite travellers</strong> with code{" "}
+            <strong>Invite travellers</strong> — code{" "}
             <span className="invite-code-inline">{meta.inviteCode}</span>
           </p>
           <div className="toolbar" style={{ marginBottom: 0 }}>
             <Link href="/account" className="btn btn-primary">
-              Copy invite message
-            </Link>
-            <Link href="/join" className="btn btn-ghost">
-              Preview join page
+              Copy invite
             </Link>
           </div>
         </section>
@@ -285,7 +283,7 @@ export function HubPage() {
           </button>
         ) : null}
         <Link href="/account" className="btn btn-ghost">
-          Account & sync
+          Account
         </Link>
         {meta?.role !== "traveller" ? (
           <button type="button" className="btn btn-ghost" onClick={resetTrip}>
