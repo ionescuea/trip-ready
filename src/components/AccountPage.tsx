@@ -84,7 +84,13 @@ export function AccountPage() {
     setMsg(null);
     const res = await signInWithEmail(email);
     setBusy(false);
-    setMsg(res.error || "Check your email for the magic link, then come back here.");
+    if (res.error) {
+      setMsg(res.error);
+      return;
+    }
+    setMsg(
+      "Check your email for the magic link. It opens the live site (tripreaddyy.netlify.app) — ignore any old localhost links.",
+    );
   }
 
   async function enableCloud() {

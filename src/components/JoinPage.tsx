@@ -8,6 +8,7 @@ import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { createClient } from "@/lib/supabase/client";
 import { joinCloudTrip, lookupInvite } from "@/lib/tripCloud";
+import { publicAppOrigin } from "@/lib/appUrl";
 
 export function JoinPage() {
   const router = useRouter();
@@ -73,10 +74,10 @@ export function JoinPage() {
     setBusy(true);
     setError(null);
     setLinkSent(false);
-    const redirectTo =
-      typeof window !== "undefined"
-        ? `${window.location.origin}/join?code=${encodeURIComponent(code.trim().toUpperCase())}`
-        : undefined;
+    const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
+    const redirectTo = origin
+      ? `${origin}/join?code=${encodeURIComponent(code.trim().toUpperCase())}`
+      : undefined;
     const res = await signInWithEmail(email, redirectTo);
     setBusy(false);
     if (res.error) {

@@ -12,6 +12,7 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import { loadCloudMeta, saveCloudMeta, type CloudMeta } from "@/lib/cloudMeta";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { publicAppOrigin } from "@/lib/appUrl";
 
 type CloudContextValue = {
   configured: boolean;
@@ -75,9 +76,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const signInWithEmail = useCallback(async (email: string, redirectTo?: string) => {
     const client = createClient();
     if (!client) return { error: "Supabase is not configured." };
-    const next =
-      redirectTo ||
-      (typeof window !== "undefined" ? `${window.location.origin}/account` : undefined);
+    // Always land on the live app from magic links (phones can't open localhost)
+    const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
+    const next = redirectTo || (origin ? `${origin}/account` : undefined);
     const { error } = await client.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: next },
