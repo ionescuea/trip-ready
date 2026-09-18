@@ -212,7 +212,7 @@ export async function claimTripByEmail(
   error?: string;
 }> {
   const { data, error } = await client.rpc("claim_trip_by_email", {
-    code: code.trim(),
+    p_code: code.trim(),
     p_email: email.trim(),
   });
   if (error) {
@@ -257,7 +257,7 @@ export async function pushTravellerSelf(
   },
 ): Promise<{ trip: Trip | null; error?: string }> {
   const { data, error } = await client.rpc("push_traveller_self", {
-    code: args.code.trim(),
+    p_code: args.code.trim(),
     p_email: args.email.trim(),
     p_person_id: args.personId,
     p_address: args.address ?? null,
