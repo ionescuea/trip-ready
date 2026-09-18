@@ -1,6 +1,9 @@
 -- Trip Ready — simple traveller access (invite code + email, no magic link).
 -- Run in Supabase SQL editor after schema.sql.
 
+drop function if exists public.claim_trip_by_email(text, text);
+drop function if exists public.push_traveller_self(text, text, text, text, jsonb, jsonb);
+
 -- Look up trip by invite code + traveller email (must match people[].email).
 create or replace function public.claim_trip_by_email(p_code text, p_email text)
 returns table (
