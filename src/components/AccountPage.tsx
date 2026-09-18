@@ -284,6 +284,67 @@ export function AccountPage() {
             )}
           </section>
 
+          {user ? (
+            <section className="panel" style={{ marginTop: "1rem" }}>
+              <div className="panel-head">
+                <h2>Test before inviting others</h2>
+              </div>
+              <ol className="join-steps account-test-steps" aria-label="How to test sync">
+                <li>
+                  <span>1</span>
+                  <div>
+                    <strong>Sign in with your email</strong>
+                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                      Magic link → you’re the owner (linked as {OWNER_FULL_NAME}).
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span>2</span>
+                  <div>
+                    <strong>Upload this trip &amp; get invite code</strong>
+                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                      That copies everything you’ve already entered (bookings, leave-by, day
+                      trips, wallet, packing) into the cloud. Local data is not wiped.
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span>3</span>
+                  <div>
+                    <strong>Open the app on your phone</strong>
+                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                      Same email magic link → you should see the same trip. Change something
+                      small on one device and refresh the other to confirm sync.
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span>4</span>
+                  <div>
+                    <strong>Optional — traveller view</strong>
+                    <p className="muted" style={{ margin: "0.25rem 0 0" }}>
+                      Use a <em>second</em> email (e.g. you+adina@gmail.com) on{" "}
+                      <Link href="/join">/join</Link> with the invite code, pick Adina or Elena
+                      Morosanu. Don’t join as a traveller with the same owner account on this
+                      trip — that confuses “who I am”.
+                    </p>
+                  </div>
+                </li>
+              </ol>
+              {!meta ? (
+                <p className="estimate-msg" style={{ margin: "0.85rem 0 0" }}>
+                  Start with steps 1–2 above. Only share the invite once phone sync looks right.
+                </p>
+              ) : (
+                <p className="estimate-msg" style={{ margin: "0.85rem 0 0" }}>
+                  Cloud is on (code <strong>{meta.inviteCode}</strong>). Safe to test on your
+                  phone with this email before messaging the others.
+                </p>
+              )}
+            </section>
+          ) : null}
+
           <section className="panel" style={{ marginTop: "1rem" }}>
             <div className="panel-head">
               <h2>Joining as a traveller?</h2>

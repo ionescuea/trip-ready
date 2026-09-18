@@ -1036,6 +1036,20 @@ body {
   background: color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
+.account-test-steps li {
+  align-items: flex-start;
+}
+
+.account-test-steps li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-test-steps li strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
 .hub-invite-banner {
   padding: 1rem 1.1rem;
   border-radius: var(--radius-sm);
