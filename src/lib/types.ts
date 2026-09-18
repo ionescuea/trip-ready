@@ -82,6 +82,8 @@ export type Person = {
   name: string;
   /** Home / pick-up address or postcode */
   address?: string;
+  /** Used for simple traveller access (invite code + matching email) */
+  email?: string;
 };
 
 /** User-added stop before parking (petrol, pick-up, etc.). */

@@ -10,6 +10,8 @@ Deferred by the user (Sep 2026). Current flow is OK short-term: Account → Copy
 ## Goal
 From the Account (organiser) invite window, send the invite directly — e.g. enter traveller email(s) and tap Send — without leaving the app for a separate mail client or WhatsApp.
 
+Note: Travellers already join with **invite code + email** (no magic link). In-app send would email that same join link.
+
 ## Likely approach (when they ask to build it)
 - Organiser enters one or more emails on Account
 - App sends a Trip Ready–branded invite email with join link + code (Resend/SendGrid/Supabase Edge Function or similar)

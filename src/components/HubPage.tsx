@@ -108,7 +108,7 @@ export function HubPage() {
         </div>
         <p style={{ margin: "0 0 1rem" }}>
           Private trip planning. Sign in as the organiser to build the trip, or join
-          with an invite if someone shared one with you.
+          with an invite code and your email.
         </p>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <Link href="/account" className="btn btn-primary">

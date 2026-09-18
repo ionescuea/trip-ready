@@ -128,6 +128,19 @@ export function withPersonName(trip: Trip, personId: string, name: string): Trip
   return { ...trip, people, extraStops, updatedAt: new Date().toISOString() };
 }
 
+export function withPersonEmail(trip: Trip, personId: string, email: string): Trip {
+  const cleaned = email.trim().toLowerCase();
+  return {
+    ...trip,
+    people: trip.people.map((person) =>
+      person.id === personId
+        ? { ...person, email: cleaned || undefined }
+        : person,
+    ),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export function personAddressLabel(person: Person): string {
   const a = person.address?.trim();
   return a || "No pick-up address";

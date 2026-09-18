@@ -9,7 +9,7 @@ import { PersonalChecklist } from "@/components/PersonalChecklist";
 import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getDriverPerson } from "@/lib/driver";
-import { withPersonAddress, withPersonName } from "@/lib/personAddress";
+import { withPersonAddress, withPersonEmail, withPersonName } from "@/lib/personAddress";
 import { DOCUMENT_ROWS, LUGGAGE_ROWS } from "@/lib/types";
 
 export function TravellerDetailPage() {
@@ -107,6 +107,23 @@ export function TravellerDetailPage() {
                 )
               }
             />
+            {canEditTrip ? (
+              <label className="field" style={{ marginTop: "0.85rem" }}>
+                <span>Email (for invite access)</span>
+                <input
+                  type="email"
+                  value={person.email ?? ""}
+                  placeholder="traveller@email.com"
+                  onChange={(e) =>
+                    update((t) => withPersonEmail(t, person.id, e.target.value))
+                  }
+                />
+              </label>
+            ) : person.email ? (
+              <p className="muted" style={{ margin: "0.75rem 0 0" }}>
+                Access email: {person.email}
+              </p>
+            ) : null}
           </section>
         ) : null}
 

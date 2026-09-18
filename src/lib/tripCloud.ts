@@ -198,3 +198,72 @@ export async function fetchMyMembership(client: SupabaseClient): Promise<{
     trip: remote.data,
   };
 }
+
+export async function claimTripByEmail(
+  client: SupabaseClient,
+  code: string,
+  email: string,
+): Promise<{
+  tripId: string;
+  inviteCode: string;
+  personId: string;
+  personName: string;
+  trip: Trip | null;
+  error?: string;
+}> {
+  const { data, error } = await client.rpc("claim_trip_by_email", {
+    code: code.trim(),
+    p_email: email.trim(),
+  });
+  if (error) {
+    return {
+      tripId: "",
+      inviteCode: "",
+      personId: "",
+      personName: "",
+      trip: null,
+      error: error.message,
+    };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id || !row?.person_id) {
+    return {
+      tripId: "",
+      inviteCode: "",
+      personId: "",
+      personName: "",
+      trip: null,
+      error: "No traveller with that email on this trip.",
+    };
+  }
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: (row.invite_code as string) || code.trim().toUpperCase(),
+    personId: row.person_id as string,
+    personName: (row.person_name as string) || "",
+    trip: (row.data as Trip) ?? null,
+  };
+}
+
+export async function pushTravellerSelf(
+  client: SupabaseClient,
+  args: {
+    code: string;
+    email: string;
+    personId: string;
+    address?: string;
+    checklist?: Record<string, string>;
+    luggage?: Record<string, string>;
+  },
+): Promise<{ trip: Trip | null; error?: string }> {
+  const { data, error } = await client.rpc("push_traveller_self", {
+    code: args.code.trim(),
+    p_email: args.email.trim(),
+    p_person_id: args.personId,
+    p_address: args.address ?? null,
+    p_checklist: args.checklist ?? null,
+    p_luggage: args.luggage ?? null,
+  });
+  if (error) return { trip: null, error: error.message };
+  return { trip: (data as Trip) ?? null };
+}

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
-import { findOwnerPerson, OWNER_FULL_NAME, withOwnerFullName } from "@/lib/cloudMeta";
+import { findOwnerPerson, OWNER_FULL_NAME, withOwnerFullName, isEmailTravellerMeta } from "@/lib/cloudMeta";
 import { createBlankTrip } from "@/lib/seed";
 import { loadTrip } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
@@ -66,10 +66,11 @@ export function AccountPage() {
     return [
       `You're invited to ${tripLabel} on Trip Ready.`,
       ``,
-      `Open this link: ${inviteUrl}`,
-      `Sign in with your email, then choose your name.`,
+      `1. Open: ${inviteUrl}`,
+      `2. Enter this invite code if needed: ${meta.inviteCode}`,
+      `3. Enter the email the organiser saved for you`,
       ``,
-      `Code if you need it: ${meta.inviteCode}`,
+      `No magic link — just code + email.`,
     ].join("\n");
   }, [meta?.inviteCode, inviteUrl, trip?.destination, trip?.name]);
 
@@ -175,19 +176,22 @@ export function AccountPage() {
   }
 
   const isTraveller = meta?.role === "traveller";
+  const emailTraveller = isEmailTravellerMeta(meta);
+  const missingEmails =
+    trip?.people.filter((p) => !p.email?.trim()).map((p) => p.name) ?? [];
 
   return (
     <>
       <PageHeader title="Account" />
 
-      {!user ? (
+      {!user && !emailTraveller ? (
         <section className="panel">
           <div className="panel-head">
             <h2>Sign in</h2>
           </div>
           <p className="muted" style={{ margin: "0 0 0.85rem" }}>
-            Organisers sign in to build and save the trip. Travellers use an invite
-            link instead.
+            Organisers sign in to build and save the trip. Travellers use{" "}
+            <Link href="/join">invite code + email</Link> instead.
           </p>
           <label className="field">
             <span>Email</span>
@@ -222,7 +226,15 @@ export function AccountPage() {
           </div>
 
           <p style={{ margin: "0 0 0.85rem" }}>
-            Signed in as <strong>{user.email}</strong>
+            {user ? (
+              <>
+                Signed in as <strong>{user.email}</strong>
+              </>
+            ) : (
+              <>
+                Joined with <strong>{meta?.travellerEmail}</strong>
+              </>
+            )}
             {linkedName ? (
               <>
                 {" "}
@@ -251,15 +263,22 @@ export function AccountPage() {
             </>
           ) : isTraveller ? (
             <p className="muted" style={{ margin: 0 }}>
-              You’re on the shared trip. Packing and group readiness for your name
-              sync when you change them. Sign out anytime — your ticks stay saved.
+              You’re in as a traveller
+              {meta.travellerEmail ? ` (${meta.travellerEmail})` : ""}. Packing and
+              readiness for your name sync automatically. Leave anytime — ticks stay
+              saved on the trip.
             </p>
           ) : (
             <>
               <p className="muted" style={{ margin: "0 0 0.75rem" }}>
-                Changes save to your account automatically. Invite travellers with
-                the code below.
+                Changes save to your account. Add each traveller’s email on their
+                packing page, then share the invite.
               </p>
+              {missingEmails.length > 0 ? (
+                <p className="estimate-msg" style={{ margin: "0 0 0.75rem" }}>
+                  Still need emails for: {missingEmails.join(", ")}
+                </p>
+              ) : null}
               <div className="invite-code-block">
                 <span className="invite-code-label">Invite code</span>
                 <strong className="invite-code-value">{meta.inviteCode}</strong>
@@ -286,8 +305,12 @@ export function AccountPage() {
           )}
 
           <div className="toolbar" style={{ marginTop: "1.25rem" }}>
-            <button type="button" className="btn btn-ghost" onClick={() => void signOut()}>
-              Sign out
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => void signOut()}
+            >
+              {emailTraveller ? "Leave trip" : "Sign out"}
             </button>
           </div>
         </section>

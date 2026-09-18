@@ -10,7 +10,12 @@ import {
   type ReactNode,
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { loadCloudMeta, saveCloudMeta, type CloudMeta } from "@/lib/cloudMeta";
+import {
+  isEmailTravellerMeta,
+  loadCloudMeta,
+  saveCloudMeta,
+  type CloudMeta,
+} from "@/lib/cloudMeta";
 import { clearTrip } from "@/lib/storage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { publicAppOrigin } from "@/lib/appUrl";
@@ -75,16 +80,22 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     };
   }, [configured]);
 
-  // Resolve which trip this login belongs to (owner or traveller)
+  // Resolve trip access: signed-in owner/member, or email-only traveller on this device
   useEffect(() => {
     if (!ready) return;
     if (!configured) {
       setMembershipReady(true);
       return;
     }
+
     if (!user) {
-      setMetaState(null);
-      saveCloudMeta(null);
+      const cached = loadCloudMeta();
+      if (isEmailTravellerMeta(cached)) {
+        setMetaState(cached);
+      } else {
+        setMetaState(null);
+        saveCloudMeta(null);
+      }
       setMembershipReady(true);
       return;
     }
@@ -109,7 +120,6 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         saveCloudMeta(next);
         setMetaState(next);
       } else {
-        // No trip on this account yet — clear any stale device link
         setMetaState(null);
         saveCloudMeta(null);
       }

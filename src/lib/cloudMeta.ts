@@ -8,7 +8,23 @@ export type CloudMeta = {
   /** Which Trip.people[].id this device/user is */
   personId?: string;
   role?: "owner" | "traveller";
+  /**
+   * Email-only traveller access (no Supabase login).
+   * Invite code + this email must match a person on the trip.
+   */
+  travellerEmail?: string;
 };
+
+/** Traveller joined with invite code + email (no magic link). */
+export function isEmailTravellerMeta(meta: CloudMeta | null | undefined): boolean {
+  return Boolean(
+    meta?.role === "traveller" &&
+      meta.travellerEmail?.trim() &&
+      meta.inviteCode &&
+      meta.tripId &&
+      meta.personId,
+  );
+}
 
 export const OWNER_FULL_NAME = "Elena-Alexandra Ionescu";
 
