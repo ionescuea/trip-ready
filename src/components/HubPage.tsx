@@ -143,7 +143,7 @@ export function HubPage() {
       tone: bookings.tone,
     },
     {
-      href: "/bookings#day-trips",
+      href: "/day-trips",
       title: "While there",
       detail: dayTrips.label,
       icon: "daytrips",

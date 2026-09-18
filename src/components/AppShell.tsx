@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     {
       href: "/bookings",
       label: "Bookings",
-      match: (p: string) => p.startsWith("/bookings"),
+      match: (p: string) => p.startsWith("/bookings") || p.startsWith("/day-trips"),
       icon: "bookings",
     },
     {

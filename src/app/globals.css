@@ -2241,3 +2241,22 @@ html.wallet-viewer-open .bottom-nav {
 .booking-experience .tag {
   text-transform: lowercase;
 }
+
+.booking-experience-past,
+.day-trips-timeline-past li {
+  opacity: 0.48;
+}
+
+.booking-experience-past:hover,
+.day-trips-past-panel:focus-within .booking-experience-past {
+  opacity: 0.72;
+}
+
+.day-trips-past-panel .panel-head h2 {
+  opacity: 0.7;
+}
+
+.day-trips-crosslink .btn {
+  display: inline-flex;
+  width: auto;
+}

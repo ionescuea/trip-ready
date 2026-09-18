@@ -8,6 +8,7 @@ import { useTrip } from "@/context/TripContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { withParkingAsRouteStart } from "@/lib/parkingRouteStart";
 import type { BookingDetails } from "@/lib/types";
+import Link from "next/link";
 
 export function BookingsPage() {
   const { trip, extracting, lastNotes, ingest, update } = useTrip();
@@ -26,8 +27,8 @@ export function BookingsPage() {
 
       {canEditTrip ? (
         <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Drop flight, hotel and parking as usual. For Greece day trips, paste the TUI /
-          Musement confirmation email — they land under <strong>While there</strong>.
+          Flight, hotel and parking live here. Day trips are on{" "}
+          <Link href="/day-trips">While there</Link>.
         </p>
       ) : null}
 
