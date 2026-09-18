@@ -70,8 +70,6 @@ declare
   pid text := trim(coalesce(p_person_id, ''));
   next_data jsonb;
   people jsonb;
-  email_norm text := lower(trim(coalesce(p_email, '')));
-  pid text := trim(coalesce(p_person_id, ''));
 begin
   if email_norm = '' or pid = '' then
     raise exception 'Email and person required';
