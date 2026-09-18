@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { findOwnerPerson, OWNER_FULL_NAME, withOwnerFullName } from "@/lib/cloudMeta";
+import { createBlankTrip } from "@/lib/seed";
+import { loadTrip } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
 import { createCloudTrip, setMemberPerson } from "@/lib/tripCloud";
 import { publicAppOrigin } from "@/lib/appUrl";
@@ -14,7 +16,8 @@ import { publicAppOrigin } from "@/lib/appUrl";
 export function AccountPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const { configured, ready, user, meta, setMeta, signInWithEmail, signOut } = useCloud();
+  const { configured, ready, membershipReady, user, meta, setMeta, signInWithEmail, signOut } =
+    useCloud();
   const { trip, replaceTrip } = useTrip();
   const [email, setEmail] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -94,8 +97,8 @@ export function AccountPage() {
     setMsg("Check your email — open the link on this device.");
   }
 
-  async function enableCloud() {
-    if (!trip || !user) return;
+  async function startTrip() {
+    if (!user) return;
     setBusy(true);
     setMsg(null);
     const client = createClient();
@@ -104,12 +107,18 @@ export function AccountPage() {
       setMsg("Supabase is not configured.");
       return;
     }
-    const named = withOwnerFullName(trip);
-    if (named !== trip) replaceTrip(named);
-    const owner = findOwnerPerson(named.people);
+    // Migrate any leftover local draft once; otherwise start blank
+    let seed = createBlankTrip();
+    try {
+      const local = loadTrip();
+      if (local) seed = withOwnerFullName(local);
+    } catch {
+      seed = createBlankTrip();
+    }
+    const owner = findOwnerPerson(seed.people);
     const res = await createCloudTrip(
       client,
-      named,
+      seed,
       owner?.name || user.email || undefined,
     );
     setBusy(false);
@@ -126,10 +135,12 @@ export function AccountPage() {
       role: "owner",
       personId: owner?.id,
     });
-    setMsg("Trip saved. Copy the invite below to share with travellers.");
+    replaceTrip(seed);
+    setMsg("Trip created. Add bookings, then invite travellers.");
+    router.push("/");
   }
 
-  if (!ready) {
+  if (!ready || !membershipReady) {
     return (
       <>
         <PageHeader title="Account" />
@@ -171,7 +182,8 @@ export function AccountPage() {
             <h2>Sign in</h2>
           </div>
           <p className="muted" style={{ margin: "0 0 0.85rem" }}>
-            Use the same email on phone and computer so your trip stays in sync.
+            Organisers sign in to build and save the trip. Travellers use an invite
+            link instead.
           </p>
           <label className="field">
             <span>Email</span>
@@ -191,14 +203,15 @@ export function AccountPage() {
             {busy ? "Sending…" : "Email me a link"}
           </button>
           <p className="muted" style={{ margin: "1rem 0 0" }}>
-            Have an invite?{" "}
-            <Link href="/join">Join a trip</Link>
+            Have an invite? <Link href="/join">Join a trip</Link>
           </p>
         </section>
       ) : (
         <section className="panel">
           <div className="panel-head">
-            <h2>{meta ? "Synced" : "Save & share"}</h2>
+            <h2>
+              {!meta ? "Start your trip" : isTraveller ? "Your access" : "Your trip"}
+            </h2>
           </div>
 
           <p style={{ margin: "0 0 0.85rem" }}>
@@ -214,35 +227,36 @@ export function AccountPage() {
           {!meta ? (
             <>
               <p className="muted" style={{ margin: "0 0 0.85rem" }}>
-                This trip only lives in this browser until you save it. After that,
-                sign in on any device to get the same bookings, wallet, and packing.
+                Create a private trip under this login. Only you can edit bookings
+                and details; travellers you invite can update packing and readiness.
               </p>
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={busy || !trip}
-                onClick={() => void enableCloud()}
+                disabled={busy}
+                onClick={() => void startTrip()}
               >
-                {busy ? "Saving…" : "Save trip to cloud"}
+                {busy ? "Creating…" : "Start organising"}
               </button>
               <p className="muted" style={{ margin: "1rem 0 0" }}>
-                Or <Link href="/join">join someone else’s trip</Link>
+                Or <Link href="/join">join with an invite code</Link>
               </p>
             </>
           ) : isTraveller ? (
             <p className="muted" style={{ margin: 0 }}>
-              You’re on the shared trip. Packing and readiness ticks sync
-              automatically.
+              You’re on the shared trip. Packing and group readiness for your name
+              sync when you change them. Sign out anytime — your ticks stay saved.
             </p>
           ) : (
             <>
+              <p className="muted" style={{ margin: "0 0 0.75rem" }}>
+                Changes save to your account automatically. Invite travellers with
+                the code below.
+              </p>
               <div className="invite-code-block">
                 <span className="invite-code-label">Invite code</span>
                 <strong className="invite-code-value">{meta.inviteCode}</strong>
               </div>
-              <p className="muted" style={{ margin: "0.75rem 0 0" }}>
-                Travellers open the link, sign in, and pick their name.
-              </p>
               <div className="toolbar" style={{ marginTop: "0.85rem" }}>
                 <button
                   type="button"
@@ -265,18 +279,6 @@ export function AccountPage() {
           )}
 
           <div className="toolbar" style={{ marginTop: "1.25rem" }}>
-            {meta ? (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => {
-                  setMeta(null);
-                  setMsg("Disconnected — local trip kept on this device.");
-                }}
-              >
-                Disconnect
-              </button>
-            ) : null}
             <button type="button" className="btn btn-ghost" onClick={() => void signOut()}>
               Sign out
             </button>

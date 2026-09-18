@@ -1,20 +1,79 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { findOwnerPerson } from "@/lib/cloudMeta";
 import { nameInitials } from "@/lib/names";
 
+const PUBLIC_PATHS = ["/account", "/join"];
+
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { trip, hydrated, status } = useTrip();
-  const { meta } = useCloud();
+  const { ready, membershipReady, user, meta } = useCloud();
+  const publicPath = isPublicPath(pathname);
 
-  if (!hydrated || !trip || !status) {
-    return <main className="shell loading">Loading your trip…</main>;
+  useEffect(() => {
+    if (!ready || !membershipReady) return;
+    if (!user && !publicPath) {
+      router.replace("/");
+      return;
+    }
+    if (user && !meta?.tripId && !publicPath && pathname !== "/") {
+      router.replace("/account");
+    }
+  }, [ready, membershipReady, user, meta?.tripId, publicPath, pathname, router]);
+
+  if (!ready || !membershipReady || !hydrated) {
+    return <main className="shell loading">Loading…</main>;
+  }
+
+  // Guest: account / join pages only (home welcome is rendered by Hub)
+  if (!user) {
+    return (
+      <main className="shell">
+        <div className="app-top">
+          <Link href="/" className="brand-lockup" style={{ textDecoration: "none" }}>
+            <div className="brand-mark" aria-hidden>
+              T
+            </div>
+            <p className="brand-name">Trip Ready</p>
+          </Link>
+          <Link href="/account" className="avatar" title="Sign in">
+            ?
+          </Link>
+        </div>
+        {children}
+      </main>
+    );
+  }
+
+  // Signed in but no trip yet — let Account / Join finish setup
+  if (!meta?.tripId || !trip || !status) {
+    return (
+      <main className="shell">
+        <div className="app-top">
+          <Link href="/" className="brand-lockup" style={{ textDecoration: "none" }}>
+            <div className="brand-mark" aria-hidden>
+              T
+            </div>
+            <p className="brand-name">Trip Ready</p>
+          </Link>
+          <Link href="/account" className="avatar" title="Account">
+            {nameInitials(user.email ?? "U")}
+          </Link>
+        </div>
+        {children}
+      </main>
+    );
   }
 
   const me =
@@ -22,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     findOwnerPerson(trip.people) ??
     trip.people[0];
 
-  const initials = nameInitials(me?.name);
+  const initials = nameInitials(me?.name || user.email);
 
   const nav = [
     { href: "/", label: "Trips", match: (p: string) => p === "/", icon: "home" },

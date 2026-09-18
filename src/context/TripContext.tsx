@@ -25,7 +25,7 @@ import {
   withChecklistForPeople,
   withLuggageForPeople,
 } from "@/lib/seed";
-import { clearTrip, loadTrip, saveTrip } from "@/lib/storage";
+import { clearTrip, saveTrip } from "@/lib/storage";
 import { pickNewerTrip, withOwnerFullName } from "@/lib/cloudMeta";
 import { inferDriverPerson } from "@/lib/driver";
 import {
@@ -268,7 +268,13 @@ function nextStatus(current: CellStatus | undefined): CellStatus {
 }
 
 export function TripProvider({ children }: { children: ReactNode }) {
-  const { configured, ready: cloudReady, user, meta } = useCloud();
+  const {
+    configured,
+    ready: cloudReady,
+    membershipReady,
+    user,
+    meta,
+  } = useCloud();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [lastNotes, setLastNotes] = useState<string[]>([]);
@@ -279,32 +285,24 @@ export function TripProvider({ children }: { children: ReactNode }) {
   const skipNextPush = useRef(false);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Private app: guests see nothing; members load their cloud trip only
   useEffect(() => {
-    try {
-      const existing = loadTrip();
-      if (existing) {
-        try {
-          setTrip(reconcileTripNames(existing));
-        } catch (err) {
-          console.error("[trip-ready] Reconcile failed — keeping saved trip as-is", err);
-          setTrip(existing);
-        }
-      } else {
-        setTrip(createBlankTrip());
-      }
-    } catch (err) {
-      console.error("[trip-ready] Load failed", err);
-      setTrip(createBlankTrip());
-    } finally {
-      canPersist.current = true;
-      setHydrated(true);
-    }
-  }, []);
+    if (!cloudReady || !membershipReady) return;
 
-  useEffect(() => {
-    if (!hydrated || !cloudReady || !configured || !user || !meta?.tripId) return;
+    if (!user || !meta?.tripId) {
+      canPersist.current = false;
+      setTrip(null);
+      setHydrated(true);
+      setCloudSyncing(false);
+      setCloudError(null);
+      return;
+    }
+
     const client = createClient();
-    if (!client) return;
+    if (!client) {
+      setHydrated(true);
+      return;
+    }
     let cancelled = false;
 
     (async () => {
@@ -313,17 +311,18 @@ export function TripProvider({ children }: { children: ReactNode }) {
       const remote = await fetchRemoteTrip(client, meta.tripId);
       if (cancelled) return;
       if (remote?.data) {
-        setTrip((local) => {
-          const base = local ?? createBlankTrip();
-          const chosen = pickNewerTrip(base, remote.data);
-          skipNextPush.current = true;
-          try {
-            return reconcileTripNames(chosen);
-          } catch {
-            return chosen;
-          }
-        });
+        skipNextPush.current = true;
+        try {
+          setTrip(reconcileTripNames(remote.data));
+        } catch {
+          setTrip(remote.data);
+        }
+      } else {
+        setCloudError("Could not load your trip.");
+        setTrip(null);
       }
+      canPersist.current = true;
+      setHydrated(true);
       setCloudSyncing(false);
     })();
 
@@ -361,12 +360,12 @@ export function TripProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       void client.removeChannel(channel);
     };
-  }, [hydrated, cloudReady, configured, user?.id, meta?.tripId]);
+  }, [cloudReady, membershipReady, configured, user?.id, meta?.tripId]);
 
   useEffect(() => {
-    if (!canPersist.current || !hydrated || !trip) return;
+    if (!canPersist.current || !hydrated || !trip || !user || !meta?.tripId) return;
     saveTrip(trip);
-  }, [trip, hydrated]);
+  }, [trip, hydrated, user?.id, meta?.tripId]);
 
   useEffect(() => {
     if (!canPersist.current || !hydrated || !trip) return;

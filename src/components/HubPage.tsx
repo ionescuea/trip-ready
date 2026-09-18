@@ -95,8 +95,55 @@ function MenuIcon({ name }: { name: string }) {
 export function HubPage() {
   const { trip, status, resetTrip, addTraveller, flags, cloudSyncing, cloudError } =
     useTrip();
-  const { meta } = useCloud();
-  if (!trip || !status) return null;
+  const { user, meta, ready, membershipReady } = useCloud();
+
+  if (!ready || !membershipReady) return null;
+
+  // Guests — blank app
+  if (!user) {
+    return (
+      <section className="panel welcome-panel">
+        <div className="panel-head">
+          <h2>Trip Ready</h2>
+        </div>
+        <p style={{ margin: "0 0 1rem" }}>
+          Private trip planning. Sign in as the organiser to build the trip, or join
+          with an invite if someone shared one with you.
+        </p>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
+          <Link href="/account" className="btn btn-primary">
+            Organiser sign in
+          </Link>
+          <Link href="/join" className="btn btn-ghost">
+            Join with code
+          </Link>
+        </div>
+      </section>
+    );
+  }
+
+  // Signed in, no trip yet
+  if (!meta?.tripId || !trip || !status) {
+    return (
+      <section className="panel welcome-panel">
+        <div className="panel-head">
+          <h2>Welcome</h2>
+        </div>
+        <p className="muted" style={{ margin: "0 0 1rem" }}>
+          Signed in as <strong>{user.email}</strong>. Start a private trip under this
+          login, or join one you were invited to.
+        </p>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
+          <Link href="/account" className="btn btn-primary">
+            Start organising
+          </Link>
+          <Link href="/join" className="btn btn-ghost">
+            Join with code
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   const from = trip.fromTown?.trim();
   const destination = trip.destination?.trim();
@@ -130,7 +177,7 @@ export function HubPage() {
 
   const bookings = bookingsSectionStatus(trip);
   const leaveBy = leaveBySectionStatus(trip);
-  const ready = readinessSectionStatus(flags);
+  const readyStatus = readinessSectionStatus(flags);
   const travellers = travellersSectionStatus(trip);
   const dayTrips = experienceSectionStatus(trip);
 
@@ -159,9 +206,9 @@ export function HubPage() {
     {
       href: "/ready",
       title: "Group readiness",
-      detail: ready.label,
+      detail: readyStatus.label,
       icon: "ready",
-      tone: ready.tone,
+      tone: readyStatus.tone,
     },
     {
       href: "/travellers",
@@ -183,7 +230,7 @@ export function HubPage() {
     {
       href: "/account",
       title: "Account",
-      detail: meta?.inviteCode ? `Code ${meta.inviteCode}` : "Cloud sync",
+      detail: meta.inviteCode ? `Code ${meta.inviteCode}` : "Invite & sign out",
       icon: "pack",
       tone: "yellow" as const,
     },
@@ -229,22 +276,7 @@ export function HubPage() {
         ))}
       </nav>
 
-      {!meta ? (
-        <section className="hub-invite-banner" style={{ marginTop: "1.25rem" }}>
-          <p>
-            <strong>Share or join</strong> — save this trip to the cloud, or join with a
-            code.
-          </p>
-          <div className="toolbar" style={{ marginBottom: 0 }}>
-            <Link href="/account" className="btn btn-primary">
-              Account
-            </Link>
-            <Link href="/join" className="btn btn-ghost">
-              Join with code
-            </Link>
-          </div>
-        </section>
-      ) : meta.role === "owner" || !meta.role ? (
+      {meta.role === "owner" || !meta.role ? (
         <section className="hub-invite-banner" style={{ marginTop: "1.25rem" }}>
           <p>
             <strong>Invite travellers</strong> — code{" "}
@@ -277,7 +309,7 @@ export function HubPage() {
       ) : null}
 
       <div className="toolbar" style={{ marginTop: "1rem" }}>
-        {meta?.role !== "traveller" ? (
+        {meta.role !== "traveller" ? (
           <button type="button" className="btn btn-ghost" onClick={addTraveller}>
             Add traveller
           </button>
@@ -285,7 +317,7 @@ export function HubPage() {
         <Link href="/account" className="btn btn-ghost">
           Account
         </Link>
-        {meta?.role !== "traveller" ? (
+        {meta.role !== "traveller" ? (
           <button type="button" className="btn btn-ghost" onClick={resetTrip}>
             Clear trip
           </button>
@@ -293,11 +325,11 @@ export function HubPage() {
       </div>
       {cloudSyncing ? (
         <p className="muted" style={{ marginTop: "0.65rem" }}>
-          Syncing with cloud…
+          Saving…
         </p>
-      ) : meta?.inviteCode && !cloudError ? (
+      ) : !cloudError ? (
         <p className="muted" style={{ marginTop: "0.65rem" }}>
-          Trip saved in the cloud (code {meta.inviteCode}).
+          Saved to your account.
         </p>
       ) : null}
       {cloudError ? (

@@ -1,8 +1,8 @@
 import type { CloudMeta } from "@/lib/cloudMeta";
 
-/** Local / unlinked devices act as owner (organizer). */
+/** Organiser of a cloud trip. Guests (no meta) cannot edit. */
 export function isTripOwner(meta: CloudMeta | null | undefined): boolean {
-  if (!meta) return true;
+  if (!meta?.tripId) return false;
   return meta.role !== "traveller";
 }
 
@@ -10,7 +10,11 @@ export function isTravellerMember(meta: CloudMeta | null | undefined): boolean {
   return meta?.role === "traveller";
 }
 
-/** Bookings, leave-by, travellers list, trip settings. */
+export function isSignedInToTrip(meta: CloudMeta | null | undefined): boolean {
+  return Boolean(meta?.tripId);
+}
+
+/** Bookings, leave-by, travellers list, trip settings — organiser only. */
 export function canEditTripStructure(meta: CloudMeta | null | undefined): boolean {
   return isTripOwner(meta);
 }
@@ -20,8 +24,9 @@ export function canEditPersonChecks(
   meta: CloudMeta | null | undefined,
   personId: string,
 ): boolean {
+  if (!meta?.tripId) return false;
   if (isTripOwner(meta)) return true;
-  return Boolean(meta?.personId && meta.personId === personId);
+  return Boolean(meta.personId && meta.personId === personId);
 }
 
 /** Owner editing someone else’s checklist (accidental-click risk). */

@@ -527,12 +527,6 @@ export function WalletPage() {
               wallet, then re-upload to rematch by name.
             </p>
           ) : null}
-          {!meta?.tripId ? (
-            <p className="muted" style={{ margin: "0.75rem 0 0", fontSize: "0.88rem" }}>
-              Tip:{" "}
-              <Link href="/account">upload the trip to the cloud</Link> so passes sync to phones.
-            </p>
-          ) : null}
         </section>
       ) : null}
 

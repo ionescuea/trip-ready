@@ -11,12 +11,16 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { loadCloudMeta, saveCloudMeta, type CloudMeta } from "@/lib/cloudMeta";
+import { clearTrip } from "@/lib/storage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { publicAppOrigin } from "@/lib/appUrl";
+import { fetchMyMembership } from "@/lib/tripCloud";
 
 type CloudContextValue = {
   configured: boolean;
   ready: boolean;
+  /** Auth session known and membership lookup finished for current user. */
+  membershipReady: boolean;
   user: User | null;
   session: Session | null;
   meta: CloudMeta | null;
@@ -30,6 +34,7 @@ const CloudContext = createContext<CloudContextValue | null>(null);
 export function CloudProvider({ children }: { children: ReactNode }) {
   const configured = isSupabaseConfigured();
   const [ready, setReady] = useState(!configured);
+  const [membershipReady, setMembershipReady] = useState(!configured);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [meta, setMetaState] = useState<CloudMeta | null>(null);
@@ -41,11 +46,13 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!configured) {
       setReady(true);
+      setMembershipReady(true);
       return;
     }
     const client = createClient();
     if (!client) {
       setReady(true);
+      setMembershipReady(true);
       return;
     }
 
@@ -68,6 +75,52 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     };
   }, [configured]);
 
+  // Resolve which trip this login belongs to (owner or traveller)
+  useEffect(() => {
+    if (!ready) return;
+    if (!configured) {
+      setMembershipReady(true);
+      return;
+    }
+    if (!user) {
+      setMetaState(null);
+      saveCloudMeta(null);
+      setMembershipReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setMembershipReady(false);
+    const client = createClient();
+    if (!client) {
+      setMembershipReady(true);
+      return;
+    }
+
+    void fetchMyMembership(client).then((membership) => {
+      if (cancelled) return;
+      if (membership?.tripId && membership.inviteCode) {
+        const next: CloudMeta = {
+          tripId: membership.tripId,
+          inviteCode: membership.inviteCode,
+          role: membership.role,
+          personId: membership.personId,
+        };
+        saveCloudMeta(next);
+        setMetaState(next);
+      } else {
+        // No trip on this account yet — clear any stale device link
+        setMetaState(null);
+        saveCloudMeta(null);
+      }
+      setMembershipReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, configured, user?.id]);
+
   const setMeta = useCallback((next: CloudMeta | null) => {
     saveCloudMeta(next);
     setMetaState(next);
@@ -76,7 +129,6 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const signInWithEmail = useCallback(async (email: string, redirectTo?: string) => {
     const client = createClient();
     if (!client) return { error: "Supabase is not configured." };
-    // Always land on the live app from magic links (phones can't open localhost)
     const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
     const next = redirectTo || (origin ? `${origin}/account` : undefined);
     const { error } = await client.auth.signInWithOtp({
@@ -88,6 +140,9 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    setMetaState(null);
+    saveCloudMeta(null);
+    clearTrip();
     const client = createClient();
     if (client) await client.auth.signOut();
   }, []);
@@ -96,6 +151,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     () => ({
       configured,
       ready,
+      membershipReady,
       user,
       session,
       meta,
@@ -103,7 +159,17 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       signInWithEmail,
       signOut,
     }),
-    [configured, ready, user, session, meta, setMeta, signInWithEmail, signOut],
+    [
+      configured,
+      ready,
+      membershipReady,
+      user,
+      session,
+      meta,
+      setMeta,
+      signInWithEmail,
+      signOut,
+    ],
   );
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>;

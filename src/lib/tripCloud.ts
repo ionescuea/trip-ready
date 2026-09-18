@@ -144,3 +144,57 @@ export async function lookupInvite(
     people: (trip?.people ?? []).map((p) => ({ id: p.id, name: p.name })),
   };
 }
+
+/** Latest trip membership for the signed-in user (owner or traveller). */
+export async function fetchMyMembership(client: SupabaseClient): Promise<{
+  tripId: string;
+  inviteCode: string;
+  role: "owner" | "traveller";
+  personId?: string;
+  trip: Trip | null;
+  error?: string;
+} | null> {
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  if (!user) return null;
+
+  const { data: member, error: memberError } = await client
+    .from("trip_members")
+    .select("trip_id, role, person_id")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (memberError) {
+    return {
+      tripId: "",
+      inviteCode: "",
+      role: "traveller",
+      trip: null,
+      error: memberError.message,
+    };
+  }
+  if (!member?.trip_id) return null;
+
+  const remote = await fetchRemoteTrip(client, member.trip_id as string);
+  if (!remote) {
+    return {
+      tripId: member.trip_id as string,
+      inviteCode: "",
+      role: member.role === "owner" ? "owner" : "traveller",
+      personId: member.person_id ?? undefined,
+      trip: null,
+      error: "Trip not found.",
+    };
+  }
+
+  return {
+    tripId: remote.id,
+    inviteCode: remote.invite_code,
+    role: member.role === "owner" ? "owner" : "traveller",
+    personId: (member.person_id as string | null) ?? undefined,
+    trip: remote.data,
+  };
+}
