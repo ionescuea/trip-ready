@@ -753,23 +753,39 @@ function findExperienceTitle(text: string): string | undefined {
 }
 
 function findExperienceMeeting(text: string): string | undefined {
-  let meeting = findMatch(text, [
-    /Meeting point:\s*([^\n]{5,140})/i,
-    /Meeting point\s+([A-Za-z0-9][^\n]{4,140})/i,
+  const clean = (v?: string) =>
+    v
+      ?.replace(/<\/?p>/gi, "")
+      .replace(/Open in Google Maps.*/i, "")
+      .replace(/Location Target Icon[-\s]*/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // Label and value on one line, or value on the following line (common in phone PDFs)
+  const labeled = text.match(
+    /Meeting point:?\s*([^\n]{0,140})(?:\n+([A-Za-z0-9][^\n]{4,140}))?/i,
+  );
+  if (labeled) {
+    const sameLine = clean(labeled[1]);
+    const nextLine = clean(labeled[2]);
+    const candidate =
+      sameLine && sameLine.length > 4 && !/^(where|location)$/i.test(sameLine)
+        ? sameLine
+        : nextLine;
+    if (candidate && candidate.length > 4) return candidate;
+  }
+
+  const inline = findMatch(text, [
     /Where:\s*[^\n]*Meeting point:\s*([^\n]{5,140})/i,
   ]);
-  meeting = meeting
-    ?.replace(/<\/?p>/gi, "")
-    .replace(/Open in Google Maps.*/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (meeting && meeting.length > 4) return meeting;
+  const fromInline = clean(inline);
+  if (fromInline && fromInline.length > 4) return fromInline;
 
-  // Well-known Athens meet spots when label is lost in PDF order
+  // Well-known Athens meet spots when label/value order is scrambled
   const known = text.match(
-    /\b((?:Mitsaion\s*\d+|Larissa Station|Syntagma Square)[^.\n]{0,60}(?:,\s*Athens[^.\n]{0,40})?)/i,
+    /\b((?:Mitsaion\s*\d+|Larissa Station|Syntagma Square|Marina Flisvos|Piraeus(?:\s+Port)?)[^.\n]{0,70}(?:,\s*Athens[^.\n]{0,40})?)/i,
   );
-  return known?.[1]?.replace(/\s+/g, " ").trim();
+  return clean(known?.[1]);
 }
 
 function extractExperience(text: string, notes: string[]): ExtractResult {
@@ -859,7 +875,13 @@ function extractExperience(text: string, notes: string[]): ExtractResult {
   });
 
   if (!when.date) notes.push("Experience date unclear — check the confirmation.");
-  if (!meeting) notes.push("Meeting point not found — check the voucher.");
+  // Only warn when the PDF mentions a meeting point we failed to parse
+  // (cruises often have none — don’t scare people)
+  if (!meeting && /meeting point/i.test(src)) {
+    notes.push(
+      "Meeting point is on the confirmation but unclear in the PDF — add it from the voucher.",
+    );
+  }
   if (name === "Day trip / experience") {
     notes.push("Tour title unclear — edit the name from your voucher.");
   }

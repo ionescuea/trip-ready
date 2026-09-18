@@ -264,8 +264,9 @@ export function DayTripsPage() {
               <h2>Add a day trip</h2>
             </div>
             <p className="muted" style={{ margin: "0 0 0.75rem" }}>
-              Paste the confirmation email text, or upload a PDF / .eml from your phone. One
-              file per tour works best.
+              Best on a phone: paste the email text, or upload one PDF / .eml per tour. Some
+              cruises have no meeting point on the confirmation — that’s normal; check the
+              voucher for the marina.
             </p>
             <DropZone onText={ingest} busy={extracting} />
           </section>
