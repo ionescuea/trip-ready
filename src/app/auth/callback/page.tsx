@@ -23,7 +23,7 @@ function AuthCallbackInner() {
         return;
       }
 
-      // Prefer token_hash (works from Mail / different browser — no PKCE verifier)
+      // token_hash links (after custom SMTP + template edit)
       const tokenHash = search.get("token_hash");
       const type = (search.get("type") || "email") as EmailOtpType;
       if (tokenHash) {
@@ -40,6 +40,16 @@ function AuthCallbackInner() {
         return;
       }
 
+      // Implicit flow: tokens arrive in the URL hash — give the client a moment
+      await new Promise((r) => setTimeout(r, 50));
+      const { data: fromHash } = await client.auth.getSession();
+      if (cancelled) return;
+      if (fromHash.session) {
+        router.replace(next);
+        return;
+      }
+
+      // Legacy PKCE ?code= (may fail if opened in a different browser)
       const code = search.get("code");
       if (code) {
         const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
@@ -48,7 +58,7 @@ function AuthCallbackInner() {
           const msg = exchangeError.message || "";
           if (/pkce|code verifier/i.test(msg)) {
             setError(
-              "This sign-in link was opened in a different browser than where you requested it (common with iPhone Mail). Go back to Account and enter the 6-digit code from the same email instead.",
+              "This email link opened in a different browser (common with iPhone Mail). Close this, open Trip Ready in Safari, go to Account, request a new link, then open that email’s Sign in link and stay in that window — or set up Resend SMTP later so we can use a 6-digit code.",
             );
           } else {
             setError(msg);
@@ -59,16 +69,18 @@ function AuthCallbackInner() {
         return;
       }
 
+      // One more session check (hash parse can be async)
+      await new Promise((r) => setTimeout(r, 200));
       const { data } = await client.auth.getSession();
       if (cancelled) return;
-      if (!data.session) {
-        setError(
-          "Sign-in didn’t complete. On Account, request a code and type the 6 digits from the email (more reliable on phones than tapping the link).",
-        );
+      if (data.session) {
+        router.replace(next);
         return;
       }
 
-      router.replace(next);
+      setError(
+        "Sign-in didn’t complete. Open Account in Safari, request a new email, tap Sign in in that email, and stay in the browser that opens.",
+      );
     })();
 
     return () => {

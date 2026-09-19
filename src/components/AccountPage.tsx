@@ -102,7 +102,7 @@ export function AccountPage() {
     setLinkSent(true);
     setOtp("");
     setMsg(
-      "Check your email for a 6-digit code. Enter it below on this same page (more reliable on phones than tapping the link).",
+      "Check your email. Tap Sign in and stay in the browser that opens. (A 6-digit code only appears after custom SMTP — skip that for now.)",
     );
   }
 
@@ -228,31 +228,35 @@ export function AccountPage() {
             disabled={busy || linkSent || !email.trim()}
             onClick={() => void sendMagicLink()}
           >
-            {busy && !linkSent ? "Sending…" : linkSent ? "Code sent" : "Email me a code"}
+            {busy && !linkSent ? "Sending…" : linkSent ? "Email sent" : "Email me a link"}
           </button>
           {linkSent ? (
             <>
-              <label className="field" style={{ marginTop: "1rem" }}>
-                <span>6-digit code from email</span>
-                <input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={otp}
-                  placeholder="123456"
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy || otp.trim().length < 6}
-                onClick={() => void confirmOtp()}
-              >
-                {busy ? "Checking…" : "Sign in with code"}
-              </button>
-              <p className="muted" style={{ margin: "0.75rem 0 0" }}>
-                Stay in this browser — don’t use Join with an invite code as the organiser.
+              <p className="muted" style={{ margin: "0.85rem 0 0" }}>
+                On your phone: open the email → tap <strong>Sign in</strong> → wait for
+                “Signing you in…”. Don’t use Join as the organiser.
               </p>
+              <details style={{ marginTop: "0.85rem" }}>
+                <summary className="muted">Have a 6-digit code? (after SMTP)</summary>
+                <label className="field" style={{ marginTop: "0.75rem" }}>
+                  <span>Code from email</span>
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={otp}
+                    placeholder="123456"
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={busy || otp.trim().length < 6}
+                  onClick={() => void confirmOtp()}
+                >
+                  {busy ? "Checking…" : "Sign in with code"}
+                </button>
+              </details>
             </>
           ) : null}
           <p className="muted" style={{ margin: "1rem 0 0" }}>
