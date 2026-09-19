@@ -17,10 +17,11 @@ import { formatAuthError } from "@/lib/authErrors";
 export function AccountPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const { configured, ready, membershipReady, user, meta, setMeta, signInWithEmail, signOut } =
+  const { configured, ready, membershipReady, user, meta, setMeta, signInWithEmail, verifyEmailOtp, signOut } =
     useCloud();
   const { trip, replaceTrip } = useTrip();
   const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
@@ -99,7 +100,23 @@ export function AccountPage() {
       return;
     }
     setLinkSent(true);
-    setMsg("Link sent — check your inbox (and spam). Don’t tap again; that burns the hourly limit.");
+    setOtp("");
+    setMsg(
+      "Check your email for a 6-digit code. Enter it below on this same page (more reliable on phones than tapping the link).",
+    );
+  }
+
+  async function confirmOtp() {
+    if (!otp.trim()) return;
+    setBusy(true);
+    setMsg(null);
+    const res = await verifyEmailOtp(email, otp);
+    setBusy(false);
+    if (res.error) {
+      setMsg(formatAuthError(res.error));
+      return;
+    }
+    setMsg("Signed in — loading your trip…");
   }
 
   async function startTrip() {
@@ -211,8 +228,33 @@ export function AccountPage() {
             disabled={busy || linkSent || !email.trim()}
             onClick={() => void sendMagicLink()}
           >
-            {busy ? "Sending…" : linkSent ? "Link sent" : "Email me a link"}
+            {busy && !linkSent ? "Sending…" : linkSent ? "Code sent" : "Email me a code"}
           </button>
+          {linkSent ? (
+            <>
+              <label className="field" style={{ marginTop: "1rem" }}>
+                <span>6-digit code from email</span>
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={otp}
+                  placeholder="123456"
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || otp.trim().length < 6}
+                onClick={() => void confirmOtp()}
+              >
+                {busy ? "Checking…" : "Sign in with code"}
+              </button>
+              <p className="muted" style={{ margin: "0.75rem 0 0" }}>
+                Stay in this browser — don’t use Join with an invite code as the organiser.
+              </p>
+            </>
+          ) : null}
           <p className="muted" style={{ margin: "1rem 0 0" }}>
             Have an invite? <Link href="/join">Join a trip</Link>
           </p>

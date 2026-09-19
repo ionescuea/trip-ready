@@ -31,6 +31,7 @@ type CloudContextValue = {
   meta: CloudMeta | null;
   setMeta: (meta: CloudMeta | null) => void;
   signInWithEmail: (email: string, redirectTo?: string) => Promise<{ error?: string }>;
+  verifyEmailOtp: (email: string, token: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -167,6 +168,18 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     return {};
   }, []);
 
+  const verifyEmailOtp = useCallback(async (email: string, token: string) => {
+    const client = createClient();
+    if (!client) return { error: "Supabase is not configured." };
+    const { error } = await client.auth.verifyOtp({
+      email: email.trim(),
+      token: token.trim(),
+      type: "email",
+    });
+    if (error) return { error: error.message };
+    return {};
+  }, []);
+
   const signOut = useCallback(async () => {
     setMetaState(null);
     saveCloudMeta(null);
@@ -185,6 +198,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       meta,
       setMeta,
       signInWithEmail,
+      verifyEmailOtp,
       signOut,
     }),
     [
@@ -196,6 +210,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       meta,
       setMeta,
       signInWithEmail,
+      verifyEmailOtp,
       signOut,
     ],
   );

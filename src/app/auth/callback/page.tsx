@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 
 function AuthCallbackInner() {
@@ -22,22 +23,49 @@ function AuthCallbackInner() {
         return;
       }
 
+      // Prefer token_hash (works from Mail / different browser — no PKCE verifier)
+      const tokenHash = search.get("token_hash");
+      const type = (search.get("type") || "email") as EmailOtpType;
+      if (tokenHash) {
+        const { error: otpError } = await client.auth.verifyOtp({
+          token_hash: tokenHash,
+          type,
+        });
+        if (cancelled) return;
+        if (otpError) {
+          setError(otpError.message);
+          return;
+        }
+        router.replace(next);
+        return;
+      }
+
       const code = search.get("code");
       if (code) {
         const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
         if (cancelled) return;
         if (exchangeError) {
-          setError(exchangeError.message);
+          const msg = exchangeError.message || "";
+          if (/pkce|code verifier/i.test(msg)) {
+            setError(
+              "This sign-in link was opened in a different browser than where you requested it (common with iPhone Mail). Go back to Account and enter the 6-digit code from the same email instead.",
+            );
+          } else {
+            setError(msg);
+          }
           return;
         }
-      } else {
-        // Older links / already exchanged — check session
-        const { data } = await client.auth.getSession();
-        if (cancelled) return;
-        if (!data.session) {
-          setError("Sign-in link expired or already used. Request a new one from Account.");
-          return;
-        }
+        router.replace(next);
+        return;
+      }
+
+      const { data } = await client.auth.getSession();
+      if (cancelled) return;
+      if (!data.session) {
+        setError(
+          "Sign-in didn’t complete. On Account, request a code and type the 6 digits from the email (more reliable on phones than tapping the link).",
+        );
+        return;
       }
 
       router.replace(next);
