@@ -140,10 +140,28 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     const client = createClient();
     if (!client) return { error: "Supabase is not configured." };
     const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
-    const next = redirectTo || (origin ? `${origin}/account` : undefined);
+    if (!origin) return { error: "App URL is not configured." };
+
+    // Resolve where to land after the code exchange (path only)
+    let nextPath = "/account";
+    if (redirectTo) {
+      if (redirectTo.startsWith("http")) {
+        try {
+          const u = new URL(redirectTo);
+          nextPath = `${u.pathname}${u.search}` || "/account";
+        } catch {
+          nextPath = "/account";
+        }
+      } else if (redirectTo.startsWith("/")) {
+        nextPath = redirectTo;
+      }
+    }
+
+    // Always exchange ?code= on /auth/callback first (fixes phone Mail webviews)
+    const emailRedirectTo = `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
     const { error } = await client.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: next },
+      options: { emailRedirectTo },
     });
     if (error) return { error: error.message };
     return {};

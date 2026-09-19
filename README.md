@@ -31,9 +31,12 @@ To go live / share across phones:
 4. **Authentication → Providers** → enable **Email** (magic link)
 5. **Authentication → URL configuration** → add redirects:
    - `http://localhost:3000/**`
+   - `http://localhost:3000/auth/callback`
    - `http://localhost:3000/join`
    - `https://YOUR-SITE.netlify.app/**`
+   - `https://YOUR-SITE.netlify.app/auth/callback`
    - `https://YOUR-SITE.netlify.app/join`
+   - Site URL should be `https://YOUR-SITE.netlify.app`
 6. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
 7. In `.env.local` (and Netlify env):
 
@@ -44,9 +47,9 @@ NEXT_PUBLIC_APP_URL=https://YOUR-SITE.netlify.app
 ```
 
 8. Restart `npm run dev`
-9. Open **Account & sync** (hub menu or top-right avatar):
-   - Owner: magic-link sign-in → **Upload this trip & get invite code** → **Copy invite message** (WhatsApp/email)
-   - Travellers: open the shared `/join?code=…` link → email sign-in → pick **I am** → open their checklist
+9. Open **Account**:
+   - **Organiser:** magic-link sign-in → trip loads under your login → **Copy invite**
+   - **Travellers:** `/join` → invite code + their email (no magic link) → packing/readiness only
 
 Invite links always use `NEXT_PUBLIC_APP_URL` (or the live Netlify site) so copying from localhost still works for phones.
 Edits sync to the shared trip (local cache kept as backup). Realtime updates other open devices when enabled.

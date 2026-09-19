@@ -108,6 +108,10 @@ export function JoinPage() {
         Enter the invite code and the email the organiser saved for you — no magic
         link needed.
       </p>
+      <p className="muted" style={{ margin: "0 0 1rem" }}>
+        Organising this trip? Don’t use this form —{" "}
+        <Link href="/account">sign in on Account</Link> so you can edit bookings.
+      </p>
 
       <section className="panel">
         <div className="panel-head">

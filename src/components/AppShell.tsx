@@ -8,7 +8,7 @@ import { useTrip } from "@/context/TripContext";
 import { findOwnerPerson, isEmailTravellerMeta } from "@/lib/cloudMeta";
 import { nameInitials } from "@/lib/names";
 
-const PUBLIC_PATHS = ["/account", "/join"];
+const PUBLIC_PATHS = ["/account", "/join", "/auth"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
