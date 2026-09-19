@@ -10,6 +10,7 @@ function AuthCallbackInner() {
   const router = useRouter();
   const search = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +24,6 @@ function AuthCallbackInner() {
         return;
       }
 
-      // token_hash links (after custom SMTP + template edit)
       const tokenHash = search.get("token_hash");
       const type = (search.get("type") || "email") as EmailOtpType;
       if (tokenHash) {
@@ -40,46 +40,40 @@ function AuthCallbackInner() {
         return;
       }
 
-      // Implicit flow: tokens arrive in the URL hash — give the client a moment
-      await new Promise((r) => setTimeout(r, 50));
-      const { data: fromHash } = await client.auth.getSession();
-      if (cancelled) return;
-      if (fromHash.session) {
-        router.replace(next);
-        return;
-      }
-
-      // Legacy PKCE ?code= (may fail if opened in a different browser)
-      const code = search.get("code");
-      if (code) {
-        const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
+      // Implicit flow puts tokens in the hash (#access_token=…)
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 75));
+        const { data } = await client.auth.getSession();
         if (cancelled) return;
-        if (exchangeError) {
-          const msg = exchangeError.message || "";
-          if (/pkce|code verifier/i.test(msg)) {
-            setError(
-              "This email link opened in a different browser (common with iPhone Mail). Close this, open Trip Ready in Safari, go to Account, request a new link, then open that email’s Sign in link and stay in that window — or set up Resend SMTP later so we can use a 6-digit code.",
-            );
-          } else {
-            setError(msg);
-          }
+        if (data.session) {
+          router.replace(next);
           return;
         }
-        router.replace(next);
+        // Hash may still be present for detectSessionInUrl
+        if (typeof window !== "undefined" && window.location.hash.includes("access_token")) {
+          continue;
+        }
+      }
+
+      const code = search.get("code");
+      if (code) {
+        // Old PKCE emails still in inbox — try exchange, then explain
+        const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
+        if (cancelled) return;
+        if (!exchangeError) {
+          router.replace(next);
+          return;
+        }
+        setError("This sign-in email is an older link type.");
+        setHint(
+          "On your phone: open Trip Ready in Safari → Account → Email me a link → in Mail, long-press Sign in → Open in Safari. Or sign in once on your computer and leave that tab open for the trip.",
+        );
         return;
       }
 
-      // One more session check (hash parse can be async)
-      await new Promise((r) => setTimeout(r, 200));
-      const { data } = await client.auth.getSession();
-      if (cancelled) return;
-      if (data.session) {
-        router.replace(next);
-        return;
-      }
-
-      setError(
-        "Sign-in didn’t complete. Open Account in Safari, request a new email, tap Sign in in that email, and stay in the browser that opens.",
+      setError("Sign-in didn’t finish.");
+      setHint(
+        "Request a new email from Account after the app updates, then tap Sign in and stay in the window that opens.",
       );
     })();
 
@@ -94,12 +88,17 @@ function AuthCallbackInner() {
         <div className="panel-head">
           <h2>Couldn’t sign in</h2>
           <p>{error}</p>
+          {hint ? <p className="muted">{hint}</p> : null}
         </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <Link href="/account" className="btn btn-primary">
             Back to Account
           </Link>
         </div>
+        <p className="muted" style={{ margin: "1rem 0 0" }}>
+          Tip: in this Mail browser, tap the <strong>compass</strong> icon to open in
+          Safari — only works if you also requested the link from Safari.
+        </p>
       </section>
     );
   }

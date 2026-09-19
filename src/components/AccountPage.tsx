@@ -102,7 +102,7 @@ export function AccountPage() {
     setLinkSent(true);
     setOtp("");
     setMsg(
-      "Check your email. Tap Sign in and stay in the browser that opens. (A 6-digit code only appears after custom SMTP — skip that for now.)",
+      "Check your email. Important on iPhone: long-press Sign in → Open in Safari (same place you opened this Account page). Old emails in your inbox won’t work — use a fresh one after the app updates.",
     );
   }
 
