@@ -26,7 +26,12 @@ import {
   withLuggageForPeople,
 } from "@/lib/seed";
 import { clearTrip, saveTrip } from "@/lib/storage";
-import { isEmailTravellerMeta, pickNewerTrip, withOwnerFullName } from "@/lib/cloudMeta";
+import {
+  isEmailOrganiserMeta,
+  isEmailTravellerMeta,
+  pickNewerTrip,
+  withOwnerFullName,
+} from "@/lib/cloudMeta";
 import { inferDriverPerson } from "@/lib/driver";
 import {
   canEditPersonChecks,
@@ -38,6 +43,8 @@ import { createClient } from "@/lib/supabase/client";
 import {
   claimTripByEmail,
   fetchRemoteTrip,
+  openOrganiserByEmail,
+  pushOrganiserTrip,
   pushTravellerSelf,
   pushTrip,
 } from "@/lib/tripCloud";
@@ -290,14 +297,15 @@ export function TripProvider({ children }: { children: ReactNode }) {
   const skipNextPush = useRef(false);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Private app: owners via login; travellers via invite+email; guests see nothing
+  // Private app: auth owners, email organisers, email travellers; guests see nothing
   useEffect(() => {
     if (!cloudReady || !membershipReady) return;
 
     const emailTraveller = isEmailTravellerMeta(meta);
+    const emailOrganiser = isEmailOrganiserMeta(meta);
     const ownerSession = Boolean(user && meta?.tripId && !emailTraveller);
 
-    if (!emailTraveller && !ownerSession) {
+    if (!emailTraveller && !emailOrganiser && !ownerSession) {
       canPersist.current = false;
       setTrip(null);
       setHydrated(true);
@@ -337,6 +345,26 @@ export function TripProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (emailOrganiser && meta.organiserEmail) {
+        const res = await openOrganiserByEmail(client, meta.organiserEmail);
+        if (cancelled) return;
+        if (res.error || !res.trip) {
+          setCloudError(res.error || "Could not load your trip.");
+          setTrip(null);
+        } else {
+          skipNextPush.current = true;
+          try {
+            setTrip(reconcileTripNames(res.trip));
+          } catch {
+            setTrip(res.trip);
+          }
+        }
+        canPersist.current = true;
+        setHydrated(true);
+        setCloudSyncing(false);
+        return;
+      }
+
       const remote = await fetchRemoteTrip(client, meta.tripId);
       if (cancelled) return;
       if (remote?.data) {
@@ -355,7 +383,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
       setCloudSyncing(false);
     })();
 
-    // Realtime only for signed-in members (RLS); email travellers poll below
+    // Realtime only for signed-in Supabase members
     if (!ownerSession) {
       return () => {
         cancelled = true;
@@ -396,39 +424,84 @@ export function TripProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       void client.removeChannel(channel);
     };
-  }, [cloudReady, membershipReady, configured, user?.id, meta?.tripId, meta?.travellerEmail, meta?.inviteCode, meta?.role]);
+  }, [
+    cloudReady,
+    membershipReady,
+    configured,
+    user?.id,
+    meta?.tripId,
+    meta?.travellerEmail,
+    meta?.organiserEmail,
+    meta?.inviteCode,
+    meta?.role,
+  ]);
 
-  // Email travellers: light poll so organiser edits show up
+  // Email sessions: light poll so other devices' edits show up
   useEffect(() => {
     if (!cloudReady || !membershipReady) return;
-    if (!isEmailTravellerMeta(meta) || !meta?.inviteCode || !meta.travellerEmail) return;
     const client = createClient();
     if (!client) return;
 
-    const tick = () => {
-      void claimTripByEmail(client, meta.inviteCode, meta.travellerEmail!).then((res) => {
-        if (!res.trip) return;
-        skipNextPush.current = true;
-        setTrip((local) => {
-          const base = local ?? res.trip!;
-          try {
-            return reconcileTripNames(pickNewerTrip(base, res.trip!));
-          } catch {
-            return pickNewerTrip(base, res.trip!);
-          }
+    if (isEmailTravellerMeta(meta) && meta?.inviteCode && meta.travellerEmail) {
+      const tick = () => {
+        void claimTripByEmail(client, meta.inviteCode, meta.travellerEmail!).then((res) => {
+          if (!res.trip) return;
+          skipNextPush.current = true;
+          setTrip((local) => {
+            const base = local ?? res.trip!;
+            try {
+              return reconcileTripNames(pickNewerTrip(base, res.trip!));
+            } catch {
+              return pickNewerTrip(base, res.trip!);
+            }
+          });
         });
-      });
-    };
+      };
+      const id = window.setInterval(tick, 20_000);
+      return () => window.clearInterval(id);
+    }
 
-    const id = window.setInterval(tick, 20_000);
-    return () => window.clearInterval(id);
-  }, [cloudReady, membershipReady, meta?.tripId, meta?.inviteCode, meta?.travellerEmail, meta?.role]);
+    if (isEmailOrganiserMeta(meta) && meta?.organiserEmail) {
+      const tick = () => {
+        void openOrganiserByEmail(client, meta.organiserEmail!).then((res) => {
+          if (!res.trip) return;
+          skipNextPush.current = true;
+          setTrip((local) => {
+            const base = local ?? res.trip!;
+            try {
+              return reconcileTripNames(pickNewerTrip(base, res.trip!));
+            } catch {
+              return pickNewerTrip(base, res.trip!);
+            }
+          });
+        });
+      };
+      const id = window.setInterval(tick, 20_000);
+      return () => window.clearInterval(id);
+    }
+  }, [
+    cloudReady,
+    membershipReady,
+    meta?.tripId,
+    meta?.inviteCode,
+    meta?.travellerEmail,
+    meta?.organiserEmail,
+    meta?.role,
+  ]);
 
   useEffect(() => {
     if (!canPersist.current || !hydrated || !trip || !meta?.tripId) return;
-    if (!user && !isEmailTravellerMeta(meta)) return;
+    if (!user && !isEmailTravellerMeta(meta) && !isEmailOrganiserMeta(meta)) return;
     saveTrip(trip);
-  }, [trip, hydrated, user?.id, meta?.tripId, meta?.role, meta?.travellerEmail]);
+  }, [
+    trip,
+    hydrated,
+    user?.id,
+    meta?.tripId,
+    meta?.role,
+    meta?.travellerEmail,
+    meta?.organiserEmail,
+  ]);
 
   useEffect(() => {
     if (!canPersist.current || !hydrated || !trip) return;
@@ -439,7 +512,8 @@ export function TripProvider({ children }: { children: ReactNode }) {
     }
 
     const emailTraveller = isEmailTravellerMeta(meta);
-    if (!user && !emailTraveller) return;
+    const emailOrganiser = isEmailOrganiserMeta(meta);
+    if (!user && !emailTraveller && !emailOrganiser) return;
 
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
@@ -471,6 +545,22 @@ export function TripProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (emailOrganiser && meta.organiserEmail) {
+        void pushOrganiserTrip(client, meta.organiserEmail, trip).then((res) => {
+          setCloudSyncing(false);
+          setCloudError(res.error ?? null);
+          if (res.trip) {
+            skipNextPush.current = true;
+            try {
+              setTrip(reconcileTripNames(res.trip));
+            } catch {
+              setTrip(res.trip);
+            }
+          }
+        });
+        return;
+      }
+
       void pushTrip(client, meta.tripId, trip).then((res) => {
         setCloudSyncing(false);
         setCloudError(res.error ?? null);
@@ -479,7 +569,18 @@ export function TripProvider({ children }: { children: ReactNode }) {
     return () => {
       if (pushTimer.current) clearTimeout(pushTimer.current);
     };
-  }, [trip, hydrated, configured, user?.id, meta?.tripId, meta?.role, meta?.travellerEmail, meta?.personId, meta?.inviteCode]);
+  }, [
+    trip,
+    hydrated,
+    configured,
+    user?.id,
+    meta?.tripId,
+    meta?.role,
+    meta?.travellerEmail,
+    meta?.organiserEmail,
+    meta?.personId,
+    meta?.inviteCode,
+  ]);
 
   const flags = useMemo(() => (trip ? computeFlags(trip) : []), [trip]);
   const status = trip

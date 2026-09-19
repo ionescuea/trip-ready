@@ -11,6 +11,8 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
+  isEmailAccessMeta,
+  isEmailOrganiserMeta,
   isEmailTravellerMeta,
   loadCloudMeta,
   saveCloudMeta,
@@ -91,7 +93,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
 
     if (!user) {
       const cached = loadCloudMeta();
-      if (isEmailTravellerMeta(cached)) {
+      if (isEmailAccessMeta(cached)) {
         setMetaState(cached);
       } else {
         setMetaState(null);

@@ -1,20 +1,19 @@
 ---
-description: Reminder — brand Supabase magic-link emails as Trip Ready
+description: Reminder — brand Supabase magic-link emails as Trip Ready (Resend)
 alwaysApply: true
 ---
 
-# TODO: Trip Ready auth email branding
+# TODO: Trip Ready auth email branding (Resend)
 
-Deferred by the user (Sep 2026). Remind them when auth, Account, magic links, or invites come up.
+Deferred again (Sep 2026) — user needs the app live for a trip tomorrow; Resend can wait.
 
 ## Goal
-Magic-link emails currently show **Supabase Auth** as sender and a “powered by Supabase” footer. Travellers won’t recognise that — change to **Trip Ready**.
+Magic links from **Trip Ready** (not Supabase Auth); higher email rate limits via custom SMTP.
 
-## How (when they have time)
-1. Supabase → **Authentication → Email Templates → Magic Link** — Trip Ready subject/body (keep `{{ .ConfirmationURL }}`).
-2. Supabase → **Authentication → SMTP** — custom SMTP (Resend/SendGrid/etc.) with **Sender name:** `Trip Ready` and a verified from-address. Required to change the inbox From name and drop default branding; also raises email rate limits.
+## When they return
+1. Resend account + API key
+2. Verified domain (needed to email anyone; `onboarding@resend.dev` is limited)
+3. Supabase → Authentication → SMTP: `smtp.resend.com`, port `465`, user `resend`, password = API key; sender name `Trip Ready`
+4. Optional Magic Link template wording; keep `{{ .ConfirmationURL }}`
 
-## Why this matters soon
-Custom SMTP also fixes the painful **email rate limit** (built-in mailer allows only a few magic links per hour — easy to hit while testing).
-
-Do not implement custom SMTP in code until the user asks to return to this.
+Travellers join with invite code + email (no magic link). Do not push Resend until they ask.

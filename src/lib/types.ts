@@ -166,6 +166,8 @@ export type Trip = {
   luggage?: LuggageState;
   /** Boarding passes / tickets for the in-app wallet */
   tickets?: TicketPass[];
+  /** Organiser email for simple access (no magic link) */
+  organiserEmail?: string;
   updatedAt: string;
 };
 

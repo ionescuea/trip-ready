@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
-import { findOwnerPerson, isEmailTravellerMeta } from "@/lib/cloudMeta";
+import { findOwnerPerson, isEmailAccessMeta } from "@/lib/cloudMeta";
 import { nameInitials } from "@/lib/names";
 
 const PUBLIC_PATHS = ["/account", "/join", "/auth"];
@@ -20,12 +20,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { trip, hydrated, status } = useTrip();
   const { ready, membershipReady, user, meta } = useCloud();
   const publicPath = isPublicPath(pathname);
-  const emailTraveller = isEmailTravellerMeta(meta);
+  const emailAccess = isEmailAccessMeta(meta);
   const hasTrip = Boolean(meta?.tripId && trip && status);
 
   useEffect(() => {
     if (!ready || !membershipReady) return;
-    if (!user && !emailTraveller && !publicPath) {
+    if (!user && !emailAccess && !publicPath) {
       router.replace("/");
       return;
     }
@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ready,
     membershipReady,
     user,
-    emailTraveller,
+    emailAccess,
     meta?.tripId,
     publicPath,
     pathname,
@@ -48,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   // Guest (no trip): account / join / home welcome
-  if (!user && !emailTraveller) {
+  if (!user && !emailAccess) {
     return (
       <main className="shell">
         <div className="app-top">
@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // Signed in or email traveller, but trip not ready yet
+  // Signed in or email access, but trip not ready yet
   if (!hasTrip) {
     return (
       <main className="shell">
@@ -79,7 +79,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="brand-name">Trip Ready</p>
           </Link>
           <Link href="/account" className="avatar" title="Account">
-            {nameInitials(user?.email ?? meta?.travellerEmail ?? "U")}
+            {nameInitials(
+              user?.email ?? meta?.organiserEmail ?? meta?.travellerEmail ?? "U",
+            )}
           </Link>
         </div>
         {children}
@@ -92,7 +94,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     findOwnerPerson(trip!.people) ??
     trip!.people[0];
 
-  const initials = nameInitials(me?.name || user?.email || meta?.travellerEmail);
+  const initials = nameInitials(
+    me?.name || user?.email || meta?.organiserEmail || meta?.travellerEmail,
+  );
 
   const nav = [
     { href: "/", label: "Trips", match: (p: string) => p === "/", icon: "home" },

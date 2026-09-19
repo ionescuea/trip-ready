@@ -267,3 +267,108 @@ export async function pushTravellerSelf(
   if (error) return { trip: null, error: error.message };
   return { trip: (data as Trip) ?? null };
 }
+
+export async function openOrganiserByEmail(
+  client: SupabaseClient,
+  email: string,
+): Promise<{
+  tripId: string;
+  inviteCode: string;
+  trip: Trip | null;
+  error?: string;
+}> {
+  const { data, error } = await client.rpc("open_organiser_by_email", {
+    p_email: email.trim(),
+  });
+  if (error) {
+    return { tripId: "", inviteCode: "", trip: null, error: error.message };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id) {
+    return { tripId: "", inviteCode: "", trip: null, error: "No trip for that email." };
+  }
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: row.invite_code as string,
+    trip: (row.data as Trip) ?? null,
+  };
+}
+
+export async function createTripByOrganiserEmail(
+  client: SupabaseClient,
+  email: string,
+  trip: Trip,
+): Promise<{
+  tripId: string;
+  inviteCode: string;
+  trip: Trip | null;
+  error?: string;
+}> {
+  const payload = {
+    ...trip,
+    organiserEmail: email.trim().toLowerCase(),
+    updatedAt: new Date().toISOString(),
+  };
+  const { data, error } = await client.rpc("create_trip_by_organiser_email", {
+    p_email: email.trim(),
+    p_name: trip.name || "My trip",
+    p_data: payload,
+  });
+  if (error) {
+    return { tripId: "", inviteCode: "", trip: null, error: error.message };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id || !row?.invite_code) {
+    return { tripId: "", inviteCode: "", trip: null, error: "Could not create trip." };
+  }
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: row.invite_code as string,
+    trip: (row.data as Trip) ?? payload,
+  };
+}
+
+/** Attach organiser email to an existing invite-code trip (or open if already set). */
+export async function adoptOrganiserByCode(
+  client: SupabaseClient,
+  code: string,
+  email: string,
+): Promise<{
+  tripId: string;
+  inviteCode: string;
+  trip: Trip | null;
+  error?: string;
+}> {
+  const { data, error } = await client.rpc("adopt_organiser_by_code", {
+    p_code: code.trim(),
+    p_email: email.trim(),
+  });
+  if (error) {
+    return { tripId: "", inviteCode: "", trip: null, error: error.message };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id) {
+    return { tripId: "", inviteCode: "", trip: null, error: "Could not open trip." };
+  }
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: row.invite_code as string,
+    trip: (row.data as Trip) ?? null,
+  };
+}
+
+export async function pushOrganiserTrip(
+  client: SupabaseClient,
+  email: string,
+  trip: Trip,
+): Promise<{ trip: Trip | null; error?: string }> {
+  const { data, error } = await client.rpc("push_organiser_trip", {
+    p_email: email.trim(),
+    p_data: {
+      ...trip,
+      organiserEmail: email.trim().toLowerCase(),
+    },
+  });
+  if (error) return { trip: null, error: error.message };
+  return { trip: (data as Trip) ?? null };
+}

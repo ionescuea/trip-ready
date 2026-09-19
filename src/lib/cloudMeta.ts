@@ -13,6 +13,11 @@ export type CloudMeta = {
    * Invite code + this email must match a person on the trip.
    */
   travellerEmail?: string;
+  /**
+   * Email-only organiser access (no magic link).
+   * Must match trip.organiserEmail.
+   */
+  organiserEmail?: string;
 };
 
 /** Traveller joined with invite code + email (no magic link). */
@@ -24,6 +29,21 @@ export function isEmailTravellerMeta(meta: CloudMeta | null | undefined): boolea
       meta.tripId &&
       meta.personId,
   );
+}
+
+/** Organiser access with email only (no magic link). */
+export function isEmailOrganiserMeta(meta: CloudMeta | null | undefined): boolean {
+  return Boolean(
+    meta?.role === "owner" &&
+      meta.organiserEmail?.trim() &&
+      meta.inviteCode &&
+      meta.tripId,
+  );
+}
+
+/** Any email-only session (organiser or traveller) — no Supabase Auth user. */
+export function isEmailAccessMeta(meta: CloudMeta | null | undefined): boolean {
+  return isEmailTravellerMeta(meta) || isEmailOrganiserMeta(meta);
 }
 
 export const OWNER_FULL_NAME = "Elena-Alexandra Ionescu";

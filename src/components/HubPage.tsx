@@ -100,19 +100,19 @@ export function HubPage() {
   if (!ready || !membershipReady) return null;
 
   // Guests — blank app
-  if (!user) {
+  if (!user && !meta?.tripId) {
     return (
       <section className="panel welcome-panel">
         <div className="panel-head">
           <h2>Trip Ready</h2>
         </div>
         <p style={{ margin: "0 0 1rem" }}>
-          Private trip planning. Sign in as the organiser to build the trip, or join
-          with an invite code and your email.
+          Private trip planning. Organisers enter their email on Account (no magic
+          link). Travellers join with invite code + email.
         </p>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <Link href="/account" className="btn btn-primary">
-            Organiser sign in
+            Organiser access
           </Link>
           <Link href="/join" className="btn btn-ghost">
             Join with code
@@ -122,7 +122,7 @@ export function HubPage() {
     );
   }
 
-  // Signed in, no trip yet
+  // Signed in / email access, no trip loaded yet
   if (!meta?.tripId || !trip || !status) {
     return (
       <section className="panel welcome-panel">
@@ -130,12 +130,11 @@ export function HubPage() {
           <h2>Welcome</h2>
         </div>
         <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Signed in as <strong>{user.email}</strong>. Start a private trip under this
-          login, or join one you were invited to.
+          Finish setup on Account, or join with an invite code.
         </p>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <Link href="/account" className="btn btn-primary">
-            Start organising
+            Account
           </Link>
           <Link href="/join" className="btn btn-ghost">
             Join with code
