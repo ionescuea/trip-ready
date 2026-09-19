@@ -264,6 +264,7 @@ type TripContextValue = {
   ingest: (text: string, sourceName: string) => Promise<void>;
   resetTrip: () => void;
   addTraveller: () => void;
+  removeTraveller: (personId: string) => void;
   toggleChecklist: (personId: string, key: ChecklistKey) => void;
   toggleLuggage: (personId: string, key: LuggageKey) => void;
   setChecklistStatus: (personId: string, key: ChecklistKey, status: CellStatus) => void;
@@ -822,6 +823,29 @@ export function TripProvider({ children }: { children: ReactNode }) {
     });
   }, [update, meta]);
 
+  const removeTraveller = useCallback(
+    (personId: string) => {
+      if (!canEditTripStructure(meta)) return;
+      update((t) => {
+        if (t.people.length <= 1) return t;
+        const people = t.people.filter((p) => p.id !== personId);
+        const { [personId]: _c, ...checklist } = t.checklist;
+        const luggageSrc = t.luggage ?? {};
+        const { [personId]: _l, ...luggageRest } = luggageSrc;
+        return {
+          ...t,
+          people,
+          checklist,
+          luggage: luggageRest,
+          tickets: (t.tickets ?? []).filter((ticket) => ticket.personId !== personId),
+          extraStops: (t.extraStops ?? []).filter((s) => s.personId !== personId),
+          driverPersonId: t.driverPersonId === personId ? undefined : t.driverPersonId,
+        };
+      });
+    },
+    [update, meta],
+  );
+
   const toggleChecklist = useCallback(
     (personId: string, key: ChecklistKey) => {
       updateChecks(personId, (t) => {
@@ -905,6 +929,7 @@ export function TripProvider({ children }: { children: ReactNode }) {
     ingest,
     resetTrip,
     addTraveller,
+    removeTraveller,
     toggleChecklist,
     toggleLuggage,
     setChecklistStatus,

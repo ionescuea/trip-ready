@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { AddressField } from "@/components/AddressField";
 import { PageHeader } from "@/components/PageHeader";
@@ -14,7 +14,8 @@ import { DOCUMENT_ROWS, LUGGAGE_ROWS } from "@/lib/types";
 
 export function TravellerDetailPage() {
   const params = useParams<{ personId: string }>();
-  const { trip, toggleChecklist, toggleLuggage, update, updatePersonDetails } =
+  const router = useRouter();
+  const { trip, toggleChecklist, toggleLuggage, update, updatePersonDetails, removeTraveller } =
     useTrip();
   const { canEditPerson, canEditTrip, isEditingOther, isTraveller, myPersonId } =
     usePermissions();
@@ -38,6 +39,17 @@ export function TravellerDetailPage() {
   const ownerOther = isEditingOther(person.id);
   const driver = getDriverPerson(trip);
   const isDriver = driver?.id === person.id;
+  const canDelete = canEditTrip && trip.people.length > 1;
+
+  function handleRemove() {
+    if (!canDelete) return;
+    const ok = window.confirm(
+      `Remove ${person!.name} from this trip?\n\nTheir packing ticks will be deleted.`,
+    );
+    if (!ok) return;
+    removeTraveller(person!.id);
+    router.replace("/travellers");
+  }
 
   if (isTraveller && myPersonId && person.id !== myPersonId) {
     return (
@@ -68,6 +80,11 @@ export function TravellerDetailPage() {
         <Link href="/wallet" className="btn btn-ghost">
           Open wallet
         </Link>
+        {canDelete ? (
+          <button type="button" className="btn btn-ghost" onClick={handleRemove}>
+            Remove traveller
+          </button>
+        ) : null}
       </div>
 
       <div className="col">
