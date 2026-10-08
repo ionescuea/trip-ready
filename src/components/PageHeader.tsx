@@ -8,7 +8,7 @@ type Props = {
   backHref?: string;
 };
 
-export function PageHeader({ title, subtitle, backHref = "/" }: Props) {
+export function PageHeader({ title, subtitle, backHref = "/hub" }: Props) {
   return (
     <header className="page-header">
       <Link href={backHref} className="page-back">

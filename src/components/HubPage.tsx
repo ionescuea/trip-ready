@@ -213,6 +213,12 @@ export function HubPage() {
 
   return (
     <>
+      {user && meta.role !== "traveller" ? (
+        <Link href="/" className="page-back" style={{ marginBottom: "0.75rem", display: "inline-block" }}>
+          ‹ Back
+        </Link>
+      ) : null}
+
       <section className="trip-hero">
         <p className="trip-hero-eyebrow">Your trip</p>
         <h1>{destination || trip.name}</h1>
