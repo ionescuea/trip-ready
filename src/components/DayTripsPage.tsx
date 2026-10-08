@@ -199,7 +199,7 @@ function ExperienceCard({
 }
 
 export function DayTripsPage() {
-  const { trip, extracting, lastNotes, ingest, update } = useTrip();
+  const { trip, extracting, ingest, update } = useTrip();
   const { canEditTrip } = usePermissions();
   if (!trip) return null;
 
@@ -246,14 +246,6 @@ export function DayTripsPage() {
       {extracting ? (
         <div className="banner">
           <p>Extracting day trip details…</p>
-        </div>
-      ) : null}
-
-      {lastNotes.length > 0 && canEditTrip ? (
-        <div className="banner">
-          {lastNotes.map((n) => (
-            <p key={n}>{n}</p>
-          ))}
         </div>
       ) : null}
 

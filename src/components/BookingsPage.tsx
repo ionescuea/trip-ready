@@ -11,7 +11,7 @@ import type { BookingDetails } from "@/lib/types";
 import Link from "next/link";
 
 export function BookingsPage() {
-  const { trip, extracting, lastNotes, ingest, update } = useTrip();
+  const { trip, extracting, ingest, update } = useTrip();
   const { canEditTrip } = usePermissions();
   if (!trip) return null;
 
@@ -35,14 +35,6 @@ export function BookingsPage() {
       {extracting ? (
         <div className="banner">
           <p>Extracting booking details…</p>
-        </div>
-      ) : null}
-
-      {lastNotes.length > 0 && canEditTrip ? (
-        <div className="banner">
-          {lastNotes.map((n) => (
-            <p key={n}>{n}</p>
-          ))}
         </div>
       ) : null}
 
