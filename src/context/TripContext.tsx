@@ -597,18 +597,13 @@ export function TripProvider({ children }: { children: ReactNode }) {
     [meta],
   );
 
-  /** Traveller profile fields (name, pick-up address) including own address for travellers. */
+  /** Traveller profile fields (name, pick-up address) — no confirm; organiser often fills these. */
   const updatePersonDetails = useCallback(
     (personId: string, mutator: (t: Trip) => Trip) => {
       if (!canEditPersonChecks(meta, personId)) return;
-      if (isOwnerEditingOther(meta, personId)) {
-        const name =
-          trip?.people.find((p) => p.id === personId)?.name?.trim() || "this traveller";
-        if (!confirmOwnerEditOther(name)) return;
-      }
       setTrip((current) => (current ? mutator(current) : current));
     },
-    [meta, trip?.people],
+    [meta],
   );
 
   /** Checklist / luggage toggles — travellers only for their own person. */
