@@ -110,7 +110,7 @@ export function JoinPage() {
       </p>
       <p className="muted" style={{ margin: "0 0 1rem" }}>
         Organising this trip? Don’t use this form —{" "}
-        <Link href="/account">sign in on Account</Link> so you can edit bookings.
+        <Link href="/">sign in on the home page</Link> so you can edit bookings.
       </p>
 
       <section className="panel">
@@ -150,7 +150,7 @@ export function JoinPage() {
       {error ? <p className="route-warn">{error}</p> : null}
 
       <p className="muted" style={{ marginTop: "1rem" }}>
-        Organising the trip? <Link href="/account">Sign in here</Link>
+        Organising the trip? <Link href="/">Sign in here</Link>
       </p>
     </>
   );

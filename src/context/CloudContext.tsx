@@ -18,7 +18,12 @@ import {
 } from "@/lib/cloudMeta";
 import { clearTrip } from "@/lib/storage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { claimOrganiserByEmail, fetchMyMembership } from "@/lib/tripCloud";
+import {
+  claimOrganiserByEmail,
+  fetchMyOwnerTrips,
+  fetchMyTravellerMembership,
+  type OwnerTripSummary,
+} from "@/lib/tripCloud";
 
 type CloudContextValue = {
   configured: boolean;
@@ -28,7 +33,12 @@ type CloudContextValue = {
   user: User | null;
   session: Session | null;
   meta: CloudMeta | null;
+  /** Holidays this organiser owns (empty for guests / travellers). */
+  ownerTrips: OwnerTripSummary[];
   setMeta: (meta: CloudMeta | null) => void;
+  selectTrip: (trip: OwnerTripSummary) => void;
+  clearSelectedTrip: () => void;
+  refreshOwnerTrips: () => Promise<void>;
   signUpWithPassword: (
     email: string,
     password: string,
@@ -49,6 +59,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [meta, setMetaState] = useState<CloudMeta | null>(null);
+  const [ownerTrips, setOwnerTrips] = useState<OwnerTripSummary[]>([]);
 
   useEffect(() => {
     setMetaState(loadCloudMeta());
@@ -86,7 +97,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     };
   }, [configured]);
 
-  // Resolve trip access: signed-in owner/member, or email-only traveller on this device
+  // Resolve trip access: organiser trip list + optional selection, or email-only device session
   useEffect(() => {
     if (!ready) return;
     if (!configured) {
@@ -95,6 +106,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
 
     if (!user) {
+      setOwnerTrips([]);
       const cached = loadCloudMeta();
       if (isEmailAccessMeta(cached)) {
         setMetaState(cached);
@@ -115,35 +127,51 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     }
 
     void (async () => {
-      let membership = await fetchMyMembership(client);
+      // Claim legacy email-only organiser trip into trip_members if needed
+      await claimOrganiserByEmail(client);
       if (cancelled) return;
 
-      if (!membership?.tripId) {
-        const claimed = await claimOrganiserByEmail(client);
+      const { trips } = await fetchMyOwnerTrips(client);
+      if (cancelled) return;
+      setOwnerTrips(trips);
+
+      const cached = loadCloudMeta();
+
+      // Traveller auth membership (rare) — keep single-trip access
+      if (cached?.role === "traveller" || (!trips.length && cached?.role !== "owner")) {
+        const traveller = await fetchMyTravellerMembership(client);
         if (cancelled) return;
-        if (claimed?.tripId && claimed.inviteCode) {
-          membership = {
-            tripId: claimed.tripId,
-            inviteCode: claimed.inviteCode,
-            role: "owner",
-            trip: claimed.trip,
+        if (traveller?.tripId && traveller.inviteCode) {
+          const next: CloudMeta = {
+            tripId: traveller.tripId,
+            inviteCode: traveller.inviteCode,
+            role: "traveller",
+            personId: traveller.personId,
           };
-        } else if (claimed?.error) {
-          // Leave meta empty; Account can show the error when linking manually
-          membership = null;
+          saveCloudMeta(next);
+          setMetaState(next);
+          setMembershipReady(true);
+          return;
         }
       }
 
-      if (membership?.tripId && membership.inviteCode) {
+      // Restore previous holiday selection if still owned
+      if (
+        cached?.tripId &&
+        cached.role !== "traveller" &&
+        trips.some((t) => t.tripId === cached.tripId)
+      ) {
+        const hit = trips.find((t) => t.tripId === cached.tripId)!;
         const next: CloudMeta = {
-          tripId: membership.tripId,
-          inviteCode: membership.inviteCode,
-          role: membership.role,
-          personId: membership.personId,
+          tripId: hit.tripId,
+          inviteCode: hit.inviteCode,
+          role: "owner",
+          personId: hit.personId ?? cached.personId,
         };
         saveCloudMeta(next);
         setMetaState(next);
       } else {
+        // No selection — organiser sees the holiday list on Home
         setMetaState(null);
         saveCloudMeta(null);
       }
@@ -159,6 +187,33 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     saveCloudMeta(next);
     setMetaState(next);
   }, []);
+
+  const selectTrip = useCallback((trip: OwnerTripSummary) => {
+    const next: CloudMeta = {
+      tripId: trip.tripId,
+      inviteCode: trip.inviteCode,
+      role: "owner",
+      personId: trip.personId,
+    };
+    saveCloudMeta(next);
+    setMetaState(next);
+  }, []);
+
+  const clearSelectedTrip = useCallback(() => {
+    clearTrip();
+    saveCloudMeta(null);
+    setMetaState(null);
+  }, []);
+
+  const refreshOwnerTrips = useCallback(async () => {
+    const client = createClient();
+    if (!client || !user) {
+      setOwnerTrips([]);
+      return;
+    }
+    const { trips } = await fetchMyOwnerTrips(client);
+    setOwnerTrips(trips);
+  }, [user]);
 
   const signUpWithPassword = useCallback(async (email: string, password: string) => {
     const client = createClient();
@@ -198,6 +253,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    setOwnerTrips([]);
     setMetaState(null);
     saveCloudMeta(null);
     clearTrip();
@@ -213,7 +269,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       user,
       session,
       meta,
+      ownerTrips,
       setMeta,
+      selectTrip,
+      clearSelectedTrip,
+      refreshOwnerTrips,
       signUpWithPassword,
       signInWithPassword,
       signOut,
@@ -225,7 +285,11 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       user,
       session,
       meta,
+      ownerTrips,
       setMeta,
+      selectTrip,
+      clearSelectedTrip,
+      refreshOwnerTrips,
       signUpWithPassword,
       signInWithPassword,
       signOut,

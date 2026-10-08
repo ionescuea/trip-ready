@@ -1,5 +1,5 @@
-import { HubPage } from "@/components/HubPage";
+import { HomePage } from "@/components/HomePage";
 
 export default function Home() {
-  return <HubPage />;
+  return <HomePage />;
 }

@@ -15,8 +15,8 @@ function AuthCallbackInner() {
     let cancelled = false;
 
     (async () => {
-      const nextRaw = search.get("next") || "/account";
-      const next = nextRaw.startsWith("/") ? nextRaw : "/account";
+      const nextRaw = search.get("next") || "/";
+      const next = nextRaw.startsWith("/") ? nextRaw : "/";
       const client = createClient();
       if (!client) {
         setError("Cloud is not configured.");
@@ -69,8 +69,8 @@ function AuthCallbackInner() {
           <p>{error}</p>
         </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <Link href="/account" className="btn btn-primary">
-            Back to Account
+          <Link href="/" className="btn btn-primary">
+            Back to home
           </Link>
         </div>
       </section>

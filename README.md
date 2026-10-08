@@ -43,9 +43,9 @@ NEXT_PUBLIC_APP_URL=https://YOUR-SITE.netlify.app
 ```
 
 11. Restart `npm run dev`
-12. Open **Account**:
-   - **Organiser:** create account or sign in with email + password → trip loads (or link with invite code) → **Copy invite**
-   - **Travellers:** `/join` → invite code + their email → packing/readiness only
+12. Open the **home page** (`/`):
+   - **Organiser:** create account or sign in → see your holiday cards → open one (or start / link a trip) → **Copy invite** on Account
+   - **Travellers:** `/join` → invite code + their email → packing/readiness only (unchanged)
 
 Invite links always use `NEXT_PUBLIC_APP_URL` (or the live Netlify site) so copying from localhost still works for phones.
 Edits sync to the shared trip (local cache kept as backup). Realtime updates other open devices when enabled.

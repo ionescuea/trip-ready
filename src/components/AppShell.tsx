@@ -8,7 +8,7 @@ import { useTrip } from "@/context/TripContext";
 import { findOwnerPerson, isEmailAccessMeta } from "@/lib/cloudMeta";
 import { nameInitials } from "@/lib/names";
 
-const PUBLIC_PATHS = ["/account", "/join", "/auth"];
+const PUBLIC_PATHS = ["/", "/join", "/auth"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -21,16 +21,31 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { ready, membershipReady, user, meta } = useCloud();
   const publicPath = isPublicPath(pathname);
   const emailAccess = isEmailAccessMeta(meta);
+  const showHolidayListNav =
+    Boolean(user && meta?.role !== "traveller") || Boolean(meta?.organiserEmail);
+  const isTravellerSession = Boolean(
+    meta?.role === "traveller" || (emailAccess && meta?.travellerEmail),
+  );
   const hasTrip = Boolean(meta?.tripId && trip && status);
+  const onHome = pathname === "/";
 
   useEffect(() => {
     if (!ready || !membershipReady) return;
+
     if (!user && !emailAccess && !publicPath) {
       router.replace("/");
       return;
     }
-    if (user && !meta?.tripId && !publicPath && pathname !== "/") {
-      router.replace("/account");
+
+    if (user && !meta?.tripId && !isTravellerSession) {
+      if (!onHome && pathname !== "/account") {
+        router.replace("/");
+      }
+      return;
+    }
+
+    if (isTravellerSession && onHome) {
+      router.replace("/hub");
     }
   }, [
     ready,
@@ -38,7 +53,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     user,
     emailAccess,
     meta?.tripId,
+    isTravellerSession,
     publicPath,
+    onHome,
     pathname,
     router,
   ]);
@@ -47,7 +64,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     return <main className="shell loading">Loading…</main>;
   }
 
-  // Guest (no trip): account / join / home welcome
   if (!user && !emailAccess) {
     return (
       <main className="shell">
@@ -58,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
             <p className="brand-name">Trip Ready</p>
           </Link>
-          <Link href="/account" className="avatar" title="Sign in">
+          <Link href="/" className="avatar" title="Sign in">
             ?
           </Link>
         </div>
@@ -67,7 +83,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // Signed in or email access, but trip not ready yet
   if (!hasTrip) {
     return (
       <main className="shell">
@@ -98,38 +113,49 @@ export function AppShell({ children }: { children: ReactNode }) {
     me?.name || user?.email || meta?.organiserEmail || meta?.travellerEmail,
   );
 
+  const tripsHref = showHolidayListNav ? "/" : "/hub";
+
   const nav = [
-    { href: "/", label: "Trips", match: (p: string) => p === "/", icon: "home" },
+    {
+      href: tripsHref,
+      label: showHolidayListNav ? "Holidays" : "Home",
+      match: (p: string) => (showHolidayListNav ? p === "/" : p === "/hub" || p === "/"),
+      icon: "home" as const,
+    },
     {
       href: "/bookings",
       label: "Bookings",
       match: (p: string) => p.startsWith("/bookings") || p.startsWith("/day-trips"),
-      icon: "bookings",
+      icon: "bookings" as const,
     },
     {
       href: "/leave-by",
       label: "Leave by",
       match: (p: string) => p.startsWith("/leave-by"),
-      icon: "leave",
+      icon: "leave" as const,
     },
     {
       href: "/travellers",
       label: "Pack",
       match: (p: string) => p.startsWith("/travellers") || p.startsWith("/ready"),
-      icon: "pack",
+      icon: "pack" as const,
     },
     {
       href: "/wallet",
       label: "Wallet",
       match: (p: string) => p.startsWith("/wallet"),
-      icon: "wallet",
+      icon: "wallet" as const,
     },
-  ] as const;
+  ];
 
   return (
     <main className="shell">
       <div className="app-top">
-        <Link href="/" className="brand-lockup" style={{ textDecoration: "none" }}>
+        <Link
+          href={showHolidayListNav ? "/" : "/hub"}
+          className="brand-lockup"
+          style={{ textDecoration: "none" }}
+        >
           <div className="brand-mark" aria-hidden>
             T
           </div>
@@ -142,18 +168,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {children}
 
-      <nav className="bottom-nav" aria-label="Primary">
-        {nav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`nav-item ${item.match(pathname) ? "active" : ""}`}
-          >
-            <NavIcon name={item.icon} />
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      {/* Organiser holiday list: no bottom nav. Trip pages: full nav. */}
+      {onHome && showHolidayListNav ? null : (
+        <nav className="bottom-nav" aria-label="Primary">
+          {nav.map((item) => (
+            <Link
+              key={item.href + item.label}
+              href={item.href}
+              className={`nav-item ${item.match(pathname) ? "active" : ""}`}
+            >
+              <NavIcon name={item.icon} />
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      )}
     </main>
   );
 }

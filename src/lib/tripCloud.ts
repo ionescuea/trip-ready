@@ -145,11 +145,82 @@ export async function lookupInvite(
   };
 }
 
-/** Latest trip membership for the signed-in user (owner or traveller). */
-export async function fetchMyMembership(client: SupabaseClient): Promise<{
+export type OwnerTripSummary = {
   tripId: string;
   inviteCode: string;
-  role: "owner" | "traveller";
+  personId?: string;
+  name: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  updatedAt: string;
+};
+
+/** All holidays this signed-in user organises. */
+export async function fetchMyOwnerTrips(
+  client: SupabaseClient,
+): Promise<{ trips: OwnerTripSummary[]; error?: string }> {
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  if (!user) return { trips: [], error: "Sign in first." };
+
+  const { data: members, error: memberError } = await client
+    .from("trip_members")
+    .select("trip_id, person_id, created_at")
+    .eq("user_id", user.id)
+    .eq("role", "owner")
+    .order("created_at", { ascending: false });
+
+  if (memberError) return { trips: [], error: memberError.message };
+  if (!members?.length) return { trips: [] };
+
+  const ids = members.map((m) => m.trip_id as string);
+  const { data: rows, error: tripError } = await client
+    .from("trips")
+    .select("id, invite_code, name, data, updated_at")
+    .in("id", ids);
+
+  if (tripError) return { trips: [], error: tripError.message };
+
+  const byId = new Map(
+    (rows ?? []).map((r) => [r.id as string, r as RemoteTripRow & { updated_at: string }]),
+  );
+  const personByTrip = new Map(
+    members.map((m) => [m.trip_id as string, (m.person_id as string | null) ?? undefined]),
+  );
+
+  const trips: OwnerTripSummary[] = [];
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row) continue;
+    const data = row.data as Trip;
+    trips.push({
+      tripId: row.id,
+      inviteCode: row.invite_code,
+      personId: personByTrip.get(id),
+      name: (data?.name || row.name || "My trip").trim() || "My trip",
+      destination: (data?.destination || "").trim(),
+      startDate: (data?.startDate || "").trim(),
+      endDate: (data?.endDate || "").trim(),
+      updatedAt: row.updated_at || data?.updatedAt || "",
+    });
+  }
+
+  trips.sort((a, b) => {
+    const ta = Date.parse(a.updatedAt || "") || 0;
+    const tb = Date.parse(b.updatedAt || "") || 0;
+    return tb - ta;
+  });
+
+  return { trips };
+}
+
+/** Latest traveller membership for the signed-in user (if any). */
+export async function fetchMyTravellerMembership(client: SupabaseClient): Promise<{
+  tripId: string;
+  inviteCode: string;
+  role: "traveller";
   personId?: string;
   trip: Trip | null;
   error?: string;
@@ -163,6 +234,7 @@ export async function fetchMyMembership(client: SupabaseClient): Promise<{
     .from("trip_members")
     .select("trip_id, role, person_id")
     .eq("user_id", user.id)
+    .eq("role", "traveller")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -183,7 +255,7 @@ export async function fetchMyMembership(client: SupabaseClient): Promise<{
     return {
       tripId: member.trip_id as string,
       inviteCode: "",
-      role: member.role === "owner" ? "owner" : "traveller",
+      role: "traveller",
       personId: member.person_id ?? undefined,
       trip: null,
       error: "Trip not found.",
@@ -193,9 +265,43 @@ export async function fetchMyMembership(client: SupabaseClient): Promise<{
   return {
     tripId: remote.id,
     inviteCode: remote.invite_code,
-    role: member.role === "owner" ? "owner" : "traveller",
+    role: "traveller",
     personId: (member.person_id as string | null) ?? undefined,
     trip: remote.data,
+  };
+}
+
+/** @deprecated Prefer fetchMyOwnerTrips + selectTrip; kept for one-trip lookups. */
+export async function fetchMyMembership(client: SupabaseClient): Promise<{
+  tripId: string;
+  inviteCode: string;
+  role: "owner" | "traveller";
+  personId?: string;
+  trip: Trip | null;
+  error?: string;
+} | null> {
+  const traveller = await fetchMyTravellerMembership(client);
+  if (traveller?.tripId) return traveller;
+
+  const { trips, error } = await fetchMyOwnerTrips(client);
+  if (error) {
+    return {
+      tripId: "",
+      inviteCode: "",
+      role: "owner",
+      trip: null,
+      error,
+    };
+  }
+  const first = trips[0];
+  if (!first) return null;
+  const remote = await fetchRemoteTrip(client, first.tripId);
+  return {
+    tripId: first.tripId,
+    inviteCode: first.inviteCode,
+    role: "owner",
+    personId: first.personId,
+    trip: remote?.data ?? null,
   };
 }
 

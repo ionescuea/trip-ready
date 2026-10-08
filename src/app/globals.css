@@ -112,6 +112,105 @@ body {
   letter-spacing: -0.02em;
 }
 
+/* —— Home / holiday list —— */
+.home-hero {
+  margin-bottom: 1.15rem;
+  animation: rise 0.5s ease both;
+}
+
+.home-hero-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.home-hero h1 {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(2rem, 6vw, 2.6rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.home-hero-meta {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+  max-width: 28rem;
+}
+
+.holiday-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.holiday-card {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 1.1rem 2.5rem 1.1rem 1.15rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.holiday-card:hover {
+  transform: translateY(-2px);
+  border-color: #c5d9dc;
+  box-shadow: 0 12px 28px rgba(28, 36, 40, 0.08);
+}
+
+.holiday-card.active {
+  border-color: var(--teal);
+  background: linear-gradient(165deg, #ffffff 0%, var(--teal-mist) 100%);
+}
+
+.holiday-card-label {
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+.holiday-card-title {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.holiday-card-meta,
+.holiday-card-code {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.holiday-card-chevron {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.5rem;
+  color: var(--muted);
+  line-height: 1;
+}
+
 /* —— Trip hero —— */
 .trip-hero {
   position: relative;

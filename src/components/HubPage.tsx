@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
 import { resolveAirportQuery } from "@/lib/airports";
@@ -93,48 +94,23 @@ function MenuIcon({ name }: { name: string }) {
 }
 
 export function HubPage() {
+  const router = useRouter();
   const { trip, status, resetTrip, addTraveller, flags, cloudSyncing, cloudError } =
     useTrip();
-  const { user, meta, ready, membershipReady } = useCloud();
+  const { user, meta, ready, membershipReady, clearSelectedTrip } = useCloud();
 
   if (!ready || !membershipReady) return null;
 
-  // Guests — blank app
-  if (!user && !meta?.tripId) {
-    return (
-      <section className="panel welcome-panel">
-        <div className="panel-head">
-          <h2>Trip Ready</h2>
-        </div>
-        <p style={{ margin: "0 0 1rem" }}>
-          Private trip planning. Organisers sign in with email and password.
-          Travellers join with invite code + email.
-        </p>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <Link href="/account" className="btn btn-primary">
-            Organiser sign in
-          </Link>
-          <Link href="/join" className="btn btn-ghost">
-            Join with code
-          </Link>
-        </div>
-      </section>
-    );
-  }
-
-  // Signed in / email access, no trip loaded yet
   if (!meta?.tripId || !trip || !status) {
     return (
-      <section className="panel welcome-panel">
+      <section className="panel">
         <div className="panel-head">
-          <h2>Welcome</h2>
+          <h2>Choose a holiday</h2>
+          <p>Open a trip from your holiday list, or join with an invite code.</p>
         </div>
-        <p className="muted" style={{ margin: "0 0 1rem" }}>
-          Finish setup on Account, or join with an invite code.
-        </p>
         <div className="toolbar" style={{ marginBottom: 0 }}>
-          <Link href="/account" className="btn btn-primary">
-            Account
+          <Link href="/" className="btn btn-primary">
+            My holidays
           </Link>
           <Link href="/join" className="btn btn-ghost">
             Join with code
@@ -308,6 +284,18 @@ export function HubPage() {
       ) : null}
 
       <div className="toolbar" style={{ marginTop: "1rem" }}>
+        {meta.role !== "traveller" && user ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              clearSelectedTrip();
+              router.push("/");
+            }}
+          >
+            All holidays
+          </button>
+        ) : null}
         {meta.role !== "traveller" ? (
           <button type="button" className="btn btn-ghost" onClick={addTraveller}>
             Add traveller
