@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   claimOrganiserByCode,
   createCloudTrip,
+  deleteOwnerTrip,
   type OwnerTripSummary,
 } from "@/lib/tripCloud";
 
@@ -41,6 +42,7 @@ export function HomePage() {
     meta,
     ownerTrips,
     selectTrip,
+    clearSelectedTrip,
     refreshOwnerTrips,
     signUpWithPassword,
     signInWithPassword,
@@ -170,6 +172,32 @@ export function HomePage() {
     router.push("/hub");
   }
 
+  async function removeTrip(trip: OwnerTripSummary) {
+    const label = tripTitle(trip);
+    const ok = window.confirm(
+      `Remove “${label}”?\n\nThis deletes the holiday for everyone. You can’t undo it.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setMsg(null);
+    const client = createClient();
+    if (!client) {
+      setBusy(false);
+      setMsg("Supabase is not configured.");
+      return;
+    }
+    const res = await deleteOwnerTrip(client, trip.tripId);
+    if (res.error) {
+      setBusy(false);
+      setMsg(formatAuthError(res.error) || "Could not remove trip.");
+      return;
+    }
+    if (meta?.tripId === trip.tripId) clearSelectedTrip();
+    await refreshOwnerTrips();
+    setBusy(false);
+    setMsg("Trip removed.");
+  }
+
   if (!ready || !membershipReady) {
     return (
       <section className="panel">
@@ -259,21 +287,33 @@ export function HomePage() {
               {ownerTrips.map((trip) => {
                 const active = meta?.tripId === trip.tripId;
                 return (
-                  <button
+                  <div
                     key={trip.tripId}
-                    type="button"
                     role="listitem"
                     className={`holiday-card${active ? " active" : ""}`}
-                    onClick={() => openTrip(trip)}
                   >
-                    <span className="holiday-card-label">Holiday</span>
-                    <strong className="holiday-card-title">{tripTitle(trip)}</strong>
-                    <span className="holiday-card-meta">{tripDates(trip)}</span>
-                    <span className="holiday-card-code">Code {trip.inviteCode}</span>
-                    <span className="holiday-card-chevron" aria-hidden>
-                      ›
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="holiday-card-open"
+                      onClick={() => openTrip(trip)}
+                    >
+                      <span className="holiday-card-label">Holiday</span>
+                      <strong className="holiday-card-title">{tripTitle(trip)}</strong>
+                      <span className="holiday-card-meta">{tripDates(trip)}</span>
+                      <span className="holiday-card-code">Code {trip.inviteCode}</span>
+                      <span className="holiday-card-chevron" aria-hidden>
+                        ›
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="holiday-card-remove"
+                      disabled={busy}
+                      onClick={() => void removeTrip(trip)}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 );
               })}
             </div>

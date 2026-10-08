@@ -40,6 +40,33 @@ export async function pushTrip(
   return {};
 }
 
+/** Organiser deletes a holiday they own (members cascade). */
+export async function deleteOwnerTrip(
+  client: SupabaseClient,
+  tripId: string,
+): Promise<{ error?: string }> {
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  if (!user) return { error: "Sign in first." };
+
+  const { data: member, error: memberError } = await client
+    .from("trip_members")
+    .select("role")
+    .eq("trip_id", tripId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (memberError) return { error: memberError.message };
+  if (!member || member.role !== "owner") {
+    return { error: "Only the organiser can remove this trip." };
+  }
+
+  const { error } = await client.from("trips").delete().eq("id", tripId);
+  if (error) return { error: error.message };
+  return {};
+}
+
 /** Create cloud trip + owner membership. Returns invite code. */
 export async function createCloudTrip(
   client: SupabaseClient,

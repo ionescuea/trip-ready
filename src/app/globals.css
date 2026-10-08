@@ -154,17 +154,14 @@ body {
 .holiday-card {
   position: relative;
   display: grid;
-  gap: 0.2rem;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
   width: 100%;
-  padding: 1.1rem 2.5rem 1.1rem 1.15rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: var(--shadow);
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
+  overflow: hidden;
   transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -177,6 +174,20 @@ body {
 .holiday-card.active {
   border-color: var(--teal);
   background: linear-gradient(165deg, #ffffff 0%, var(--teal-mist) 100%);
+}
+
+.holiday-card-open {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 1.1rem 2.25rem 1.1rem 1.15rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
 }
 
 .holiday-card-label {
@@ -203,12 +214,36 @@ body {
 
 .holiday-card-chevron {
   position: absolute;
-  right: 1rem;
+  right: 0.65rem;
   top: 50%;
   transform: translateY(-50%);
   font-size: 1.5rem;
   color: var(--muted);
   line-height: 1;
+}
+
+.holiday-card-remove {
+  align-self: stretch;
+  min-width: 4.75rem;
+  padding: 0.65rem 0.85rem;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.holiday-card-remove:hover:not(:disabled) {
+  color: #8b2e2e;
+  background: #f8ecec;
+}
+
+.holiday-card-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* —— Trip hero —— */
