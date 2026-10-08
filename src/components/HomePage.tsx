@@ -344,7 +344,11 @@ export function HomePage() {
       <section className="panel">
         <div className="panel-head">
           <h2>{mode === "signup" ? "Create organiser account" : "Organiser sign in"}</h2>
-          <p>Email and password. Each account gets its own list of holidays.</p>
+          <p>
+            Email and password. Each account gets its own list of holidays. First
+            time? Use <strong>Create account</strong>. If sign-in keeps failing,
+            turn off Confirm email in Supabase Auth settings.
+          </p>
         </div>
 
         <div className="toolbar" style={{ marginBottom: "1rem" }}>

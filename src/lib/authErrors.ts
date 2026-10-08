@@ -4,7 +4,7 @@ export function formatAuthError(raw?: string | null): string {
   if (!msg) return "Something went wrong. Try again.";
   const lower = msg.toLowerCase();
   if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials")) {
-    return "Wrong email or password.";
+    return "Sign-in failed. Use Create account if you haven’t yet — or in Supabase Auth → Users, confirm the user / set a password. Also turn Confirm email OFF under Auth → Providers → Email.";
   }
   if (lower.includes("user already registered") || lower.includes("already been registered")) {
     return "That email already has an account — sign in instead.";
