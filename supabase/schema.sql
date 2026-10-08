@@ -1,5 +1,5 @@
 -- Trip Ready — run this in the Supabase SQL editor (Dashboard → SQL).
--- Enables shared trips + per-traveller logins (magic link).
+-- Enables shared trips + organiser accounts (email/password) + trip_members.
 
 create extension if not exists "pgcrypto";
 

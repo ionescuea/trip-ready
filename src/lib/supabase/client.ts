@@ -8,11 +8,7 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
-/**
- * Browser Supabase client.
- * Uses implicit auth (not @supabase/ssr PKCE) so magic links work when opened from
- * iPhone Mail’s in-app browser — PKCE needs the same browser that requested the email.
- */
+/** Browser Supabase client (password sessions persisted in localStorage). */
 export function createClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;
   const key =
@@ -22,10 +18,9 @@ export function createClient(): SupabaseClient | null {
 
   return createSupabaseClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
     auth: {
-      flowType: "implicit",
-      detectSessionInUrl: true,
       persistSession: true,
       autoRefreshToken: true,
+      detectSessionInUrl: true,
       storage: typeof window !== "undefined" ? window.localStorage : undefined,
     },
   });

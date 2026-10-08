@@ -1,19 +1,15 @@
 ---
-description: Reminder — brand Supabase magic-link emails as Trip Ready (Resend)
+description: Reminder — brand Trip Ready auth emails (Resend) when SMTP is needed
 alwaysApply: true
 ---
 
 # TODO: Trip Ready auth email branding (Resend)
 
-Deferred again (Sep 2026) — user needs the app live for a trip tomorrow; Resend can wait.
+Organisers use **email + password** (not magic link). Resend is only needed for password reset / confirm-email later.
 
-## Goal
-Magic links from **Trip Ready** (not Supabase Auth); higher email rate limits via custom SMTP.
+## When they ask
+1. Resend account + API key + verified domain
+2. Supabase → Authentication → SMTP: `smtp.resend.com`, port `465`, user `resend`, password = API key; sender name `Trip Ready`
+3. Then turn Confirm email / recovery emails back on if desired
 
-## When they return
-1. Resend account + API key
-2. Verified domain (needed to email anyone; `onboarding@resend.dev` is limited)
-3. Supabase → Authentication → SMTP: `smtp.resend.com`, port `465`, user `resend`, password = API key; sender name `Trip Ready`
-4. Optional Magic Link template wording; keep `{{ .ConfirmationURL }}`
-
-Travellers join with invite code + email (no magic link). Do not push Resend until they ask.
+Travellers join with invite code + email. Do not push Resend until they ask.

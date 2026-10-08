@@ -28,17 +28,13 @@ To go live / share across phones:
 1. Create a project at [supabase.com](https://supabase.com)
 2. **SQL editor** → paste and run `supabase/schema.sql`
 3. **SQL editor** → also run `supabase/ticket-storage.sql` (boarding-pass wallet files)
-4. **Authentication → Providers** → enable **Email** (magic link)
-5. **Authentication → URL configuration** → add redirects:
-   - `http://localhost:3000/**`
-   - `http://localhost:3000/auth/callback`
-   - `http://localhost:3000/join`
-   - `https://YOUR-SITE.netlify.app/**`
-   - `https://YOUR-SITE.netlify.app/auth/callback`
-   - `https://YOUR-SITE.netlify.app/join`
-   - Site URL should be `https://YOUR-SITE.netlify.app`
-6. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
-7. In `.env.local` (and Netlify env):
+4. **SQL editor** → run `supabase/organiser-password-claim.sql` (link existing trips after password login)
+5. **SQL editor** → run `supabase/traveller-email-access.sql` (traveller join by code + email)
+6. **Authentication → Providers** → enable **Email** (password sign-in)
+7. **Authentication → Providers → Email** → turn **Confirm email** OFF until you add custom SMTP (otherwise sign-up needs a confirmation email)
+8. **Authentication → URL configuration** → Site URL = your live site; add redirects for localhost and the live origin
+9. Optional but recommended: **Database → Replication** → enable Realtime for table `trips`
+10. In `.env.local` (and Netlify env):
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
@@ -46,10 +42,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 NEXT_PUBLIC_APP_URL=https://YOUR-SITE.netlify.app
 ```
 
-8. Restart `npm run dev`
-9. Open **Account**:
-   - **Organiser:** magic-link sign-in → trip loads under your login → **Copy invite**
-   - **Travellers:** `/join` → invite code + their email (no magic link) → packing/readiness only
+11. Restart `npm run dev`
+12. Open **Account**:
+   - **Organiser:** create account or sign in with email + password → trip loads (or link with invite code) → **Copy invite**
+   - **Travellers:** `/join` → invite code + their email → packing/readiness only
 
 Invite links always use `NEXT_PUBLIC_APP_URL` (or the live Netlify site) so copying from localhost still works for phones.
 Edits sync to the shared trip (local cache kept as backup). Realtime updates other open devices when enabled.

@@ -12,16 +12,13 @@ import {
 import type { Session, User } from "@supabase/supabase-js";
 import {
   isEmailAccessMeta,
-  isEmailOrganiserMeta,
-  isEmailTravellerMeta,
   loadCloudMeta,
   saveCloudMeta,
   type CloudMeta,
 } from "@/lib/cloudMeta";
 import { clearTrip } from "@/lib/storage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
-import { publicAppOrigin } from "@/lib/appUrl";
-import { fetchMyMembership } from "@/lib/tripCloud";
+import { claimOrganiserByEmail, fetchMyMembership } from "@/lib/tripCloud";
 
 type CloudContextValue = {
   configured: boolean;
@@ -32,8 +29,14 @@ type CloudContextValue = {
   session: Session | null;
   meta: CloudMeta | null;
   setMeta: (meta: CloudMeta | null) => void;
-  signInWithEmail: (email: string, redirectTo?: string) => Promise<{ error?: string }>;
-  verifyEmailOtp: (email: string, token: string) => Promise<{ error?: string }>;
+  signUpWithPassword: (
+    email: string,
+    password: string,
+  ) => Promise<{ error?: string; needsEmailConfirm?: boolean }>;
+  signInWithPassword: (
+    email: string,
+    password: string,
+  ) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -111,8 +114,26 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    void fetchMyMembership(client).then((membership) => {
+    void (async () => {
+      let membership = await fetchMyMembership(client);
       if (cancelled) return;
+
+      if (!membership?.tripId) {
+        const claimed = await claimOrganiserByEmail(client);
+        if (cancelled) return;
+        if (claimed?.tripId && claimed.inviteCode) {
+          membership = {
+            tripId: claimed.tripId,
+            inviteCode: claimed.inviteCode,
+            role: "owner",
+            trip: claimed.trip,
+          };
+        } else if (claimed?.error) {
+          // Leave meta empty; Account can show the error when linking manually
+          membership = null;
+        }
+      }
+
       if (membership?.tripId && membership.inviteCode) {
         const next: CloudMeta = {
           tripId: membership.tripId,
@@ -127,7 +148,7 @@ export function CloudProvider({ children }: { children: ReactNode }) {
         saveCloudMeta(null);
       }
       setMembershipReady(true);
-    });
+    })();
 
     return () => {
       cancelled = true;
@@ -139,44 +160,38 @@ export function CloudProvider({ children }: { children: ReactNode }) {
     setMetaState(next);
   }, []);
 
-  const signInWithEmail = useCallback(async (email: string, redirectTo?: string) => {
+  const signUpWithPassword = useCallback(async (email: string, password: string) => {
     const client = createClient();
     if (!client) return { error: "Supabase is not configured." };
-    const origin = publicAppOrigin() || (typeof window !== "undefined" ? window.location.origin : "");
-    if (!origin) return { error: "App URL is not configured." };
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed.includes("@")) return { error: "Enter a valid email." };
+    if (password.length < 6) return { error: "Password must be at least 6 characters." };
 
-    // Resolve where to land after the code exchange (path only)
-    let nextPath = "/account";
-    if (redirectTo) {
-      if (redirectTo.startsWith("http")) {
-        try {
-          const u = new URL(redirectTo);
-          nextPath = `${u.pathname}${u.search}` || "/account";
-        } catch {
-          nextPath = "/account";
-        }
-      } else if (redirectTo.startsWith("/")) {
-        nextPath = redirectTo;
-      }
-    }
-
-    // Always exchange ?code= on /auth/callback first (fixes phone Mail webviews)
-    const emailRedirectTo = `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
-    const { error } = await client.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo },
+    const { data, error } = await client.auth.signUp({
+      email: trimmed,
+      password,
     });
     if (error) return { error: error.message };
+    if (!data.session) {
+      return {
+        needsEmailConfirm: true,
+        error:
+          "Account created — confirm your email if Supabase requires it, then sign in. Or disable Confirm email in Auth settings.",
+      };
+    }
     return {};
   }, []);
 
-  const verifyEmailOtp = useCallback(async (email: string, token: string) => {
+  const signInWithPassword = useCallback(async (email: string, password: string) => {
     const client = createClient();
     if (!client) return { error: "Supabase is not configured." };
-    const { error } = await client.auth.verifyOtp({
-      email: email.trim(),
-      token: token.trim(),
-      type: "email",
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed.includes("@")) return { error: "Enter a valid email." };
+    if (!password) return { error: "Enter your password." };
+
+    const { error } = await client.auth.signInWithPassword({
+      email: trimmed,
+      password,
     });
     if (error) return { error: error.message };
     return {};
@@ -199,8 +214,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       session,
       meta,
       setMeta,
-      signInWithEmail,
-      verifyEmailOtp,
+      signUpWithPassword,
+      signInWithPassword,
       signOut,
     }),
     [
@@ -211,8 +226,8 @@ export function CloudProvider({ children }: { children: ReactNode }) {
       session,
       meta,
       setMeta,
-      signInWithEmail,
-      verifyEmailOtp,
+      signUpWithPassword,
+      signInWithPassword,
       signOut,
     ],
   );

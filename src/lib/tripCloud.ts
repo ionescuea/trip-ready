@@ -372,3 +372,50 @@ export async function pushOrganiserTrip(
   if (error) return { trip: null, error: error.message };
   return { trip: (data as Trip) ?? null };
 }
+
+/** After password sign-in: attach trip whose organiserEmail matches the account. */
+export async function claimOrganiserByEmail(client: SupabaseClient): Promise<{
+  tripId: string;
+  inviteCode: string;
+  trip: Trip | null;
+  error?: string;
+} | null> {
+  const { data, error } = await client.rpc("claim_organiser_by_email");
+  if (error) {
+    return { tripId: "", inviteCode: "", trip: null, error: error.message };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id) return null;
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: row.invite_code as string,
+    trip: (row.data as Trip) ?? null,
+  };
+}
+
+/** Signed-in organiser links an existing invite-code trip as owner. */
+export async function claimOrganiserByCode(
+  client: SupabaseClient,
+  code: string,
+): Promise<{
+  tripId: string;
+  inviteCode: string;
+  trip: Trip | null;
+  error?: string;
+}> {
+  const { data, error } = await client.rpc("claim_organiser_by_code", {
+    p_code: code.trim(),
+  });
+  if (error) {
+    return { tripId: "", inviteCode: "", trip: null, error: error.message };
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.trip_id) {
+    return { tripId: "", inviteCode: "", trip: null, error: "Could not open trip." };
+  }
+  return {
+    tripId: row.trip_id as string,
+    inviteCode: row.invite_code as string,
+    trip: (row.data as Trip) ?? null,
+  };
+}

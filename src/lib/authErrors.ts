@@ -1,16 +1,25 @@
-/** Friendlier copy for Supabase Auth / OTP errors. */
+/** Friendlier copy for Supabase Auth errors. */
 export function formatAuthError(raw?: string | null): string {
   const msg = (raw ?? "").trim();
   if (!msg) return "Something went wrong. Try again.";
   const lower = msg.toLowerCase();
-  if (lower.includes("rate limit") || lower.includes("email rate limit")) {
-    return "Too many sign-in emails sent. Supabase only allows a few per hour — wait about an hour, or open a link already in your inbox.";
+  if (lower.includes("invalid login credentials") || lower.includes("invalid_credentials")) {
+    return "Wrong email or password.";
   }
-  if (lower.includes("over_email_send_rate_limit")) {
-    return "Too many sign-in emails sent. Wait about an hour, or use a link already in your inbox.";
+  if (lower.includes("user already registered") || lower.includes("already been registered")) {
+    return "That email already has an account — sign in instead.";
+  }
+  if (lower.includes("password should be at least") || lower.includes("password is known")) {
+    return msg;
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Confirm your email first — or turn off “Confirm email” in Supabase Auth settings if you haven’t set up SMTP yet.";
+  }
+  if (lower.includes("rate limit") || lower.includes("email rate limit")) {
+    return "Too many attempts. Wait a bit and try again.";
   }
   if (lower.includes("pkce") || lower.includes("code verifier")) {
-    return "That email link was opened in a different browser (common on iPhone Mail). Go to Account and enter the 6-digit code from the email instead.";
+    return "That old magic-link email won’t work here. Use email and password on Account instead.";
   }
   return msg;
 }

@@ -6,31 +6,47 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { useCloud } from "@/context/CloudContext";
 import { useTrip } from "@/context/TripContext";
-import { findOwnerPerson, isEmailOrganiserMeta, isEmailTravellerMeta, OWNER_FULL_NAME, withOwnerFullName } from "@/lib/cloudMeta";
+import {
+  findOwnerPerson,
+  isEmailOrganiserMeta,
+  isEmailTravellerMeta,
+  OWNER_FULL_NAME,
+  withOwnerFullName,
+} from "@/lib/cloudMeta";
 import { createBlankTrip } from "@/lib/seed";
 import { loadTrip } from "@/lib/storage";
 import { createClient } from "@/lib/supabase/client";
 import {
-  adoptOrganiserByCode,
-  createTripByOrganiserEmail,
-  openOrganiserByEmail,
+  claimOrganiserByCode,
+  createCloudTrip,
   setMemberPerson,
 } from "@/lib/tripCloud";
 import { publicAppOrigin } from "@/lib/appUrl";
 import { formatAuthError } from "@/lib/authErrors";
 
+type AuthMode = "signin" | "signup";
+
 export function AccountPage() {
   const router = useRouter();
   const search = useSearchParams();
-  const { configured, ready, membershipReady, user, meta, setMeta, signInWithEmail, verifyEmailOtp, signOut } =
-    useCloud();
+  const {
+    configured,
+    ready,
+    membershipReady,
+    user,
+    meta,
+    setMeta,
+    signUpWithPassword,
+    signInWithPassword,
+    signOut,
+  } = useCloud();
   const { trip, replaceTrip } = useTrip();
+  const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [adoptCode, setAdoptCode] = useState("");
-  const [otp, setOtp] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [linkSent, setLinkSent] = useState(false);
 
   useEffect(() => {
     const join = search.get("join");
@@ -77,7 +93,7 @@ export function AccountPage() {
       `2. Enter this invite code if needed: ${meta.inviteCode}`,
       `3. Enter the email the organiser saved for you`,
       ``,
-      `No magic link — just code + email.`,
+      `No password needed — just code + email.`,
     ].join("\n");
   }, [meta?.inviteCode, inviteUrl, trip?.destination, trip?.name]);
 
@@ -105,12 +121,28 @@ export function AccountPage() {
     return createBlankTrip();
   }
 
-  async function continueAsOrganiser() {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !trimmed.includes("@")) {
-      setMsg("Enter a valid organiser email.");
+  async function handleAuth() {
+    setBusy(true);
+    setMsg(null);
+    const res =
+      mode === "signup"
+        ? await signUpWithPassword(email, password)
+        : await signInWithPassword(email, password);
+    setBusy(false);
+    if (res.error) {
+      setMsg(formatAuthError(res.error));
       return;
     }
+    setPassword("");
+    setMsg(
+      mode === "signup"
+        ? "Account created — loading your trip…"
+        : "Signed in — loading your trip…",
+    );
+  }
+
+  async function startNewTrip() {
+    if (!user) return;
     setBusy(true);
     setMsg(null);
     const client = createClient();
@@ -119,29 +151,12 @@ export function AccountPage() {
       setMsg("Supabase is not configured.");
       return;
     }
-
-    // Prefer existing trip for this email
-    const existing = await openOrganiserByEmail(client, trimmed);
-    if (existing.tripId && existing.trip) {
-      const owner = findOwnerPerson(existing.trip.people);
-      setMeta({
-        tripId: existing.tripId,
-        inviteCode: existing.inviteCode,
-        role: "owner",
-        personId: owner?.id,
-        organiserEmail: trimmed,
-      });
-      replaceTrip(existing.trip);
-      setBusy(false);
-      setMsg("Welcome back — trip loaded.");
-      router.push("/");
-      return;
-    }
-
-    // No trip yet — create one (or adopt below)
-    const seed = seedTripLocal();
+    const seed = {
+      ...seedTripLocal(),
+      organiserEmail: user.email?.toLowerCase(),
+    };
     const owner = findOwnerPerson(seed.people);
-    const created = await createTripByOrganiserEmail(client, trimmed, seed);
+    const created = await createCloudTrip(client, seed, owner?.name || user.email || "Owner");
     setBusy(false);
     if (created.error || !created.tripId) {
       setMsg(formatAuthError(created.error) || "Could not create trip.");
@@ -152,18 +167,17 @@ export function AccountPage() {
       inviteCode: created.inviteCode,
       role: "owner",
       personId: owner?.id,
-      organiserEmail: trimmed,
     });
-    replaceTrip(created.trip ?? { ...seed, organiserEmail: trimmed });
+    replaceTrip(seed);
     setMsg("Trip created. Add traveller emails on packing pages, then copy the invite.");
     router.push("/");
   }
 
-  async function adoptExistingTrip() {
-    const trimmed = email.trim().toLowerCase();
+  async function linkExistingTrip() {
+    if (!user) return;
     const code = adoptCode.trim().toUpperCase();
-    if (!trimmed.includes("@") || code.length < 4) {
-      setMsg("Enter your email and the existing invite code.");
+    if (code.length < 4) {
+      setMsg("Enter the invite code for your existing trip.");
       return;
     }
     setBusy(true);
@@ -174,7 +188,7 @@ export function AccountPage() {
       setMsg("Supabase is not configured.");
       return;
     }
-    const res = await adoptOrganiserByCode(client, code, trimmed);
+    const res = await claimOrganiserByCode(client, code);
     setBusy(false);
     if (res.error || !res.tripId || !res.trip) {
       setMsg(formatAuthError(res.error) || "Could not open that trip.");
@@ -186,39 +200,10 @@ export function AccountPage() {
       inviteCode: res.inviteCode,
       role: "owner",
       personId: owner?.id,
-      organiserEmail: trimmed,
     });
     replaceTrip(res.trip);
-    setMsg("Trip linked to your email — you can edit everything.");
+    setMsg("Trip linked to your account — you can edit everything.");
     router.push("/");
-  }
-
-  async function sendMagicLink() {
-    if (linkSent) return;
-    setBusy(true);
-    setMsg(null);
-    const res = await signInWithEmail(email);
-    setBusy(false);
-    if (res.error) {
-      setMsg(formatAuthError(res.error));
-      return;
-    }
-    setLinkSent(true);
-    setOtp("");
-    setMsg("Legacy magic link sent — prefer email login above for phones.");
-  }
-
-  async function confirmOtp() {
-    if (!otp.trim()) return;
-    setBusy(true);
-    setMsg(null);
-    const res = await verifyEmailOtp(email, otp);
-    setBusy(false);
-    if (res.error) {
-      setMsg(formatAuthError(res.error));
-      return;
-    }
-    setMsg("Signed in — loading your trip…");
   }
 
   if (!ready || !membershipReady) {
@@ -265,94 +250,87 @@ export function AccountPage() {
       {!hasAccess ? (
         <section className="panel">
           <div className="panel-head">
-            <h2>Organiser access</h2>
+            <h2>{mode === "signup" ? "Create organiser account" : "Organiser sign in"}</h2>
             <p>
-              Enter your email — no magic link. Same email opens this trip on any
-              phone. Travellers use Join with code + their email.
+              Email and password — no magic link. Travellers still use Join with
+              code + their email.
             </p>
           </div>
+
+          <div className="toolbar" style={{ marginBottom: "1rem" }}>
+            <button
+              type="button"
+              className={mode === "signin" ? "btn btn-primary" : "btn btn-ghost"}
+              onClick={() => {
+                setMode("signin");
+                setMsg(null);
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={mode === "signup" ? "btn btn-primary" : "btn btn-ghost"}
+              onClick={() => {
+                setMode("signup");
+                setMsg(null);
+              }}
+            >
+              Create account
+            </button>
+          </div>
+
           <label className="field">
-            <span>Your email</span>
+            <span>Email</span>
             <input
               type="email"
+              autoComplete="email"
               value={email}
               placeholder="you@example.com"
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
+          <label className="field">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              value={password}
+              placeholder={mode === "signup" ? "At least 6 characters" : "Your password"}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleAuth();
+              }}
+            />
+          </label>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !email.trim().includes("@")}
-            onClick={() => void continueAsOrganiser()}
+            disabled={busy || !email.trim().includes("@") || password.length < 6}
+            onClick={() => void handleAuth()}
           >
-            {busy ? "Opening…" : "Continue as organiser"}
+            {busy
+              ? mode === "signup"
+                ? "Creating…"
+                : "Signing in…"
+              : mode === "signup"
+                ? "Create account"
+                : "Sign in"}
           </button>
-
-          <details style={{ marginTop: "1.25rem" }}>
-            <summary className="muted">Already have an invite code? (link existing trip)</summary>
-            <label className="field" style={{ marginTop: "0.75rem" }}>
-              <span>Invite code</span>
-              <input
-                value={adoptCode}
-                placeholder="e.g. WD6KXT"
-                autoCapitalize="characters"
-                onChange={(e) =>
-                  setAdoptCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))
-                }
-              />
-            </label>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy || adoptCode.trim().length < 4 || !email.trim().includes("@")}
-              onClick={() => void adoptExistingTrip()}
-            >
-              Link this trip to my email
-            </button>
-          </details>
 
           <p className="muted" style={{ margin: "1rem 0 0" }}>
             Traveller? <Link href="/join">Join with code + email</Link>
           </p>
-
-          <details style={{ marginTop: "1rem" }}>
-            <summary className="muted">Legacy magic link (unreliable on iPhone)</summary>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              style={{ marginTop: "0.75rem" }}
-              disabled={busy || linkSent || !email.trim()}
-              onClick={() => void sendMagicLink()}
-            >
-              {busy && !linkSent ? "Sending…" : linkSent ? "Email sent" : "Email me a link"}
-            </button>
-            {linkSent ? (
-              <label className="field" style={{ marginTop: "0.75rem" }}>
-                <span>6-digit code (only if email shows one)</span>
-                <input
-                  inputMode="numeric"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ marginTop: "0.5rem" }}
-                  disabled={busy || otp.trim().length < 6}
-                  onClick={() => void confirmOtp()}
-                >
-                  Sign in with code
-                </button>
-              </label>
-            ) : null}
-          </details>
         </section>
       ) : (
         <section className="panel">
           <div className="panel-head">
             <h2>
-              {!meta ? "Start your trip" : isTraveller ? "Your access" : "Your trip"}
+              {!meta
+                ? "Set up your trip"
+                : isTraveller
+                  ? "Your access"
+                  : "Your trip"}
             </h2>
           </div>
 
@@ -364,6 +342,10 @@ export function AccountPage() {
             ) : emailOrganiser ? (
               <>
                 Organiser <strong>{meta?.organiserEmail}</strong>
+                <span className="muted">
+                  {" "}
+                  (legacy email access — create a password account to keep control)
+                </span>
               </>
             ) : (
               <>
@@ -378,19 +360,51 @@ export function AccountPage() {
             ) : null}
           </p>
 
-          {!meta ? (
-            <p className="muted" style={{ margin: 0 }}>
-              No trip on this login yet. Sign out and use <strong>Continue as organiser</strong>{" "}
-              with your email.
-            </p>
+          {user && !meta ? (
+            <>
+              <p className="muted" style={{ margin: "0 0 0.85rem" }}>
+                No trip on this account yet. Start fresh, or link the trip you already
+                ran (use the same email as before, plus the invite code).
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => void startNewTrip()}
+              >
+                {busy ? "Creating…" : "Start a new trip"}
+              </button>
+              <details style={{ marginTop: "1.25rem" }}>
+                <summary className="muted">Link existing trip with invite code</summary>
+                <label className="field" style={{ marginTop: "0.75rem" }}>
+                  <span>Invite code</span>
+                  <input
+                    value={adoptCode}
+                    placeholder="e.g. WD6KXT"
+                    autoCapitalize="characters"
+                    onChange={(e) =>
+                      setAdoptCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  disabled={busy || adoptCode.trim().length < 4}
+                  onClick={() => void linkExistingTrip()}
+                >
+                  Link this trip to my account
+                </button>
+              </details>
+            </>
           ) : isTraveller ? (
             <p className="muted" style={{ margin: 0 }}>
               You’re in as a traveller
-              {meta.travellerEmail ? ` (${meta.travellerEmail})` : ""}. Packing and
+              {meta?.travellerEmail ? ` (${meta.travellerEmail})` : ""}. Packing and
               readiness for your name sync automatically. Leave anytime — ticks stay
               saved on the trip.
             </p>
-          ) : (
+          ) : meta ? (
             <>
               <p className="muted" style={{ margin: "0 0 0.75rem" }}>
                 Changes save to your account. Add each traveller’s email on their
@@ -424,7 +438,7 @@ export function AccountPage() {
                 </button>
               </div>
             </>
-          )}
+          ) : null}
 
           <div className="toolbar" style={{ marginTop: "1.25rem" }}>
             <button
@@ -443,7 +457,8 @@ export function AccountPage() {
           className={
             msg.toLowerCase().includes("error") ||
             msg.toLowerCase().includes("could not") ||
-            msg.toLowerCase().includes("failed")
+            msg.toLowerCase().includes("failed") ||
+            msg.toLowerCase().includes("wrong")
               ? "route-warn"
               : "estimate-msg"
           }

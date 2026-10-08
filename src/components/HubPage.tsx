@@ -107,12 +107,12 @@ export function HubPage() {
           <h2>Trip Ready</h2>
         </div>
         <p style={{ margin: "0 0 1rem" }}>
-          Private trip planning. Organisers enter their email on Account (no magic
-          link). Travellers join with invite code + email.
+          Private trip planning. Organisers sign in with email and password.
+          Travellers join with invite code + email.
         </p>
         <div className="toolbar" style={{ marginBottom: 0 }}>
           <Link href="/account" className="btn btn-primary">
-            Organiser access
+            Organiser sign in
           </Link>
           <Link href="/join" className="btn btn-ghost">
             Join with code
