@@ -1,0 +1,15 @@
+---
+description: Update local CHAT-CONTEXT.md on each day we chat about Trip Ready
+alwaysApply: true
+---
+
+# Chat continuity file
+
+`CHAT-CONTEXT.md` at the repo root is local-only (gitignored). It is the resume notes for this project.
+
+On each calendar day work happens in chat:
+
+- Read `CHAT-CONTEXT.md` before changing product direction.
+- Update it the same day: correct the stable sections if behaviour changed, and append a short Daily log entry (decisions, what shipped, what is still open).
+- Do not commit `CHAT-CONTEXT.md`.
+- Do not paste secrets (API keys, service-role keys, passwords).
