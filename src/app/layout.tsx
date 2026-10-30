@@ -21,6 +21,9 @@ export const metadata: Metadata = {
   title: "Trip Ready",
   description:
     "Group trip readiness — extract bookings, check documents, plan leave-by time.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

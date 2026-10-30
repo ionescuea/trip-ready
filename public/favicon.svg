@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="8" fill="#1A535C"/>
+  <!-- handle -->
+  <path
+    d="M12.5 10.5V9.25c0-1.1.9-2 2-2h3c1.1 0 2 .9 2 2V10.5"
+    stroke="#fff"
+    stroke-width="1.75"
+    stroke-linecap="round"
+  />
+  <!-- suitcase body -->
+  <rect x="7.5" y="10.5" width="17" height="13.5" rx="2.5" fill="#fff"/>
+  <!-- centre strap -->
+  <rect x="14.75" y="10.5" width="2.5" height="13.5" fill="#1A535C"/>
+  <!-- latch -->
+  <rect x="15.15" y="15.4" width="1.7" height="2.4" rx="0.4" fill="#fff"/>
+  <!-- wheels -->
+  <circle cx="11.25" cy="25.25" r="1.15" fill="#fff"/>
+  <circle cx="20.75" cy="25.25" r="1.15" fill="#fff"/>
+</svg>
